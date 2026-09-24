@@ -32,3 +32,6 @@ go.work
 # OS specific
 .DS_Store
 Thumbs.db
+
+# Cloudflare Wrangler
+.wrangler/

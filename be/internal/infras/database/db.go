@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"vaultly-be/internal/infras/config"
 )
@@ -23,6 +24,10 @@ func Connect(cfg *config.Config) (*DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse database config: %w", err)
 	}
+
+	// Disable prepared statement cache for Supabase Transaction Pooler (port 6543 / PgBouncer)
+	// Prevents "ERROR: prepared statement stmtcache_... already exists (SQLSTATE 42P05)"
+	poolConfig.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
 
 	// Tuned for Supabase connection limits
 	poolConfig.MaxConns = 10
