@@ -22,11 +22,23 @@ CREATE TABLE IF NOT EXISTS devices (
 
 CREATE INDEX IF NOT EXISTS idx_devices_user_id ON devices(user_id);
 
--- Files metadata table
+-- Folders table (organizing photos, Knox Secure Folder style)
+CREATE TABLE IF NOT EXISTS folders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_folders_user_id ON folders(user_id);
+
+-- Files metadata table (with folder_id and separate r2_thumbnail_key)
 CREATE TABLE IF NOT EXISTS files (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    folder_id UUID REFERENCES folders(id) ON DELETE SET NULL,
     r2_object_key TEXT NOT NULL,
+    r2_thumbnail_key TEXT NOT NULL DEFAULT '',
     size BIGINT NOT NULL DEFAULT 0,
     content_type VARCHAR(100) NOT NULL DEFAULT 'application/octet-stream',
     nonce TEXT NOT NULL DEFAULT '',
@@ -36,6 +48,8 @@ CREATE TABLE IF NOT EXISTS files (
 );
 
 CREATE INDEX IF NOT EXISTS idx_files_user_id ON files(user_id);
+CREATE INDEX IF NOT EXISTS idx_files_folder_id ON files(folder_id);
+CREATE INDEX IF NOT EXISTS idx_files_user_created ON files(user_id, created_at DESC);
 
 -- File keys table (E2EE wrapped key per authorized device)
 CREATE TABLE IF NOT EXISTS file_keys (

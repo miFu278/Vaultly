@@ -11,19 +11,17 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"vaultly-be/internal/api"
-	"vaultly-be/internal/auth"
-	"vaultly-be/internal/config"
-	"vaultly-be/internal/database"
-	"vaultly-be/internal/device"
-	"vaultly-be/internal/file"
-	"vaultly-be/internal/middleware"
-	"vaultly-be/internal/pairing"
-	"vaultly-be/internal/storage"
+	"vaultly-be/internal/application/usecase"
+	"vaultly-be/internal/infras/config"
+	"vaultly-be/internal/infras/crypto"
+	"vaultly-be/internal/infras/database"
+	"vaultly-be/internal/infras/repositories"
+	"vaultly-be/internal/infras/storage"
+	presentationHttp "vaultly-be/internal/presentation/http"
 )
 
 func main() {
-	// Load configuration
+	// 1. Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
@@ -33,7 +31,7 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	// Initialize database
+	// 2. Initialize database
 	db, err := database.Connect(cfg)
 	if err != nil {
 		log.Printf("Warning: Failed to connect to database: %v. Running in limited mode.", err)
@@ -47,34 +45,43 @@ func main() {
 		}
 	}
 
-	// Initialize Cloudflare R2 / S3 storage
-	storageService, err := storage.NewStorageService(cfg)
+	// 3. Initialize Infrastructure Adapters
+	var pool = db.Pool
+	userRepo := repositories.NewUserRepository(pool)
+	deviceRepo := repositories.NewDeviceRepository(pool)
+	folderRepo := repositories.NewFolderRepository(pool)
+	fileRepo := repositories.NewFileRepository(pool)
+	pairingRepo := repositories.NewPairingRepository(pool)
+
+	storageService, err := storage.NewS3StorageService(cfg)
 	if err != nil {
 		log.Fatalf("Failed to initialize storage service: %v", err)
 	}
 
-	// Initialize domain services
-	authService := auth.NewAuthService(db, cfg)
-	deviceService := device.NewDeviceService(db)
-	fileService := file.NewFileService(db, storageService)
-	pairingService := pairing.NewPairingService(db, cfg)
+	// Dedicated Libsodium Encryption Service with XChaCha20-Poly1305 & secretstream
+	cryptoService := crypto.NewSodiumCryptoService()
+	passwordHasher := crypto.NewBcryptHasher()
+	tokenService := crypto.NewJWTTokenService(cfg.JWTSecret, cfg.JWTExpirationHours)
 
-	// Setup Gin router
+	// 4. Initialize Application Use Cases
+	authUC := usecase.NewAuthUseCase(userRepo, passwordHasher, tokenService)
+	deviceUC := usecase.NewDeviceUseCase(deviceRepo)
+	folderUC := usecase.NewFolderUseCase(folderRepo)
+	fileUC := usecase.NewFileUseCase(fileRepo, deviceRepo, storageService, cryptoService)
+	pairingUC := usecase.NewPairingUseCase(pairingRepo, deviceRepo, fileRepo, tokenService)
+
+	// 5. Initialize Presentation / HTTP Layer
 	r := gin.New()
-	r.Use(gin.Logger())
-	r.Use(gin.Recovery())
-	r.Use(middleware.CORSMiddleware())
-
-	// Register OpenAPI 3.1 & Huma routes (interactive docs at /docs)
-	api.SetupRoutes(r, api.RouterDependencies{
-		AuthService:    authService,
-		DeviceService:  deviceService,
-		FileService:    fileService,
-		PairingService: pairingService,
-		Config:         cfg,
+	presentationHttp.SetupRoutes(r, presentationHttp.RouterDependencies{
+		AuthUseCase:    authUC,
+		DeviceUseCase:  deviceUC,
+		FolderUseCase:  folderUC,
+		FileUseCase:    fileUC,
+		PairingUseCase: pairingUC,
+		TokenService:   tokenService,
 	})
 
-	// Server setup with graceful shutdown
+	// 6. HTTP Server Setup with Graceful Shutdown
 	serverAddr := fmt.Sprintf(":%s", cfg.Port)
 	srv := &http.Server{
 		Addr:         serverAddr,
@@ -86,6 +93,7 @@ func main() {
 
 	go func() {
 		log.Printf("Vaultly backend listening on http://localhost%s", serverAddr)
+		log.Printf("Interactive API Docs available at http://localhost%s/docs", serverAddr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server listen error: %v", err)
 		}
