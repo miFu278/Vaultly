@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"errors"
+	"log"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -29,6 +30,7 @@ func (r *UserRepositoryPG) Create(ctx context.Context, user *entity.User) error 
 	err := r.pool.QueryRow(ctx, query, user.Email, user.PasswordHash, user.CreatedAt, user.UpdatedAt).
 		Scan(&user.ID, &user.Email, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
+		log.Printf("[UserRepositoryPG.Create] DB Error: %v", err)
 		return domain.ErrEmailAlreadyExists
 	}
 	return nil

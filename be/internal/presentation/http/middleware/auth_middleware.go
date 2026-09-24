@@ -11,6 +11,11 @@ import (
 func AuthMiddleware(tokenSvc service.TokenService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			if qToken := c.Query("token"); qToken != "" {
+				authHeader = "Bearer " + qToken
+			}
+		}
 		claims, err := tokenSvc.Validate(authHeader)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: " + err.Error()})

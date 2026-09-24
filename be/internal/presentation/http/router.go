@@ -46,6 +46,11 @@ func SetupRoutes(r *gin.Engine, deps RouterDependencies) huma.API {
 	// Huma authentication middleware
 	api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
 		authHeader := ctx.Header("Authorization")
+		if authHeader == "" {
+			if qToken := ctx.Query("token"); qToken != "" {
+				authHeader = "Bearer " + qToken
+			}
+		}
 		if authHeader != "" {
 			claims, err := deps.TokenService.Validate(authHeader)
 			if err == nil {
