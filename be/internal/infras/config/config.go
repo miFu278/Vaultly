@@ -11,6 +11,7 @@ import (
 type Config struct {
 	Port                          string
 	Env                           string
+	DatabaseURI                   string
 	DBHost                        string
 	DBPort                        string
 	DBUser                        string
@@ -37,6 +38,7 @@ func LoadConfig() (*Config, error) {
 	cfg := &Config{
 		Port:                          getEnv("PORT", "8080"),
 		Env:                           getEnv("ENV", "development"),
+		DatabaseURI:                   getEnv("DATABASE_URL", ""),
 		DBHost:                        getEnv("DB_HOST", "localhost"),
 		DBPort:                        getEnv("DB_PORT", "5432"),
 		DBUser:                        getEnv("DB_USER", "vaultly"),
@@ -57,6 +59,9 @@ func LoadConfig() (*Config, error) {
 }
 
 func (c *Config) DatabaseURL() string {
+	if c.DatabaseURI != "" {
+		return c.DatabaseURI
+	}
 	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
 		c.DBUser, c.DBPassword, c.DBHost, c.DBPort, c.DBName, c.DBSSLMode,
 	)

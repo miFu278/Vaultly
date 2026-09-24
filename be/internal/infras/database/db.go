@@ -24,8 +24,9 @@ func Connect(cfg *config.Config) (*DB, error) {
 		return nil, fmt.Errorf("unable to parse database config: %w", err)
 	}
 
-	poolConfig.MaxConns = 25
-	poolConfig.MinConns = 5
+	// Tuned for Supabase connection limits
+	poolConfig.MaxConns = 10
+	poolConfig.MinConns = 2
 	poolConfig.MaxConnLifetime = 1 * time.Hour
 	poolConfig.MaxConnIdleTime = 30 * time.Minute
 

@@ -34,14 +34,14 @@ func main() {
 	// 2. Initialize database
 	db, err := database.Connect(cfg)
 	if err != nil {
-		log.Printf("Warning: Failed to connect to database: %v. Running in limited mode.", err)
-	} else {
-		defer db.Close()
-		// Auto-run initial migrations if file exists
-		if _, err := os.Stat("migrations/001_initial_schema.up.sql"); err == nil {
-			if migErr := db.RunMigrations("migrations/001_initial_schema.up.sql"); migErr != nil {
-				log.Printf("Migration notice: %v", migErr)
-			}
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer db.Close()
+
+	// Auto-run initial migrations if file exists
+	if _, err := os.Stat("migrations/001_initial_schema.up.sql"); err == nil {
+		if migErr := db.RunMigrations("migrations/001_initial_schema.up.sql"); migErr != nil {
+			log.Printf("Migration notice: %v", migErr)
 		}
 	}
 
