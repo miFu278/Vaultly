@@ -32,7 +32,7 @@ func LoadConfig() (*Config, error) {
 	// Load .env file if exists, ignore error if not found in production
 	_ = godotenv.Load()
 
-	jwtHours, _ := strconv.Atoi(getEnv("JWT_EXPIRATION_HOURS", "72"))
+	jwtHours, _ := strconv.Atoi(getEnv("JWT_EXPIRATION_HOURS", "720"))
 	presignedMinutes, _ := strconv.Atoi(getEnv("PRESIGNED_URL_EXPIRATION_MINUTES", "15"))
 
 	cfg := &Config{

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"io"
+	"mime/multipart"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -248,7 +249,7 @@ func RegisterFileGinRoutes(r *gin.Engine, fileUC *usecase.FileUseCase, authMiddl
 	filesGroup := r.Group("/files")
 	filesGroup.Use(authMiddleware)
 	{
-		// Multipart Form Image Upload with XChaCha20-Poly1305 Encryption
+		// Multipart Form Image Upload with XChaCha20-Poly1305 Encryption (Supports multiple files & folder_id)
 		filesGroup.POST("/upload", func(c *gin.Context) {
 			userIDVal, exists := c.Get("user_id")
 			if !exists {
@@ -263,32 +264,78 @@ func RegisterFileGinRoutes(r *gin.Engine, fileUC *usecase.FileUseCase, authMiddl
 				deviceID = &d
 			}
 
-			fileHeader, err := c.FormFile("file")
-			if err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "Multipart form 'file' is required"})
+			var targetFolderID *uuid.UUID
+			if fIDStr := c.PostForm("folder_id"); fIDStr != "" && fIDStr != "all" {
+				if parsed, err := uuid.Parse(fIDStr); err == nil {
+					targetFolderID = &parsed
+				}
+			}
+
+			// Parse multipart form
+			form, err := c.MultipartForm()
+			var fileHeaders []*multipart.FileHeader
+
+			if err == nil && form != nil {
+				if files, ok := form.File["files"]; ok {
+					fileHeaders = append(fileHeaders, files...)
+				}
+				if files, ok := form.File["file"]; ok {
+					fileHeaders = append(fileHeaders, files...)
+				}
+			}
+
+			// Fallback to single FormFile
+			if len(fileHeaders) == 0 {
+				singleFile, sErr := c.FormFile("file")
+				if sErr == nil && singleFile != nil {
+					fileHeaders = append(fileHeaders, singleFile)
+				}
+			}
+
+			if len(fileHeaders) == 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "At least one image file ('file' or 'files') is required"})
 				return
 			}
 
-			file, err := fileHeader.Open()
-			if err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read uploaded file"})
+			var uploaded []*dto.EncryptedImageUploadResponse
+			var errMsgs []string
+
+			for _, fileHeader := range fileHeaders {
+				f, fErr := fileHeader.Open()
+				if fErr != nil {
+					errMsgs = append(errMsgs, fErr.Error())
+					continue
+				}
+
+				rawBytes, rErr := io.ReadAll(f)
+				_ = f.Close()
+				if rErr != nil {
+					errMsgs = append(errMsgs, rErr.Error())
+					continue
+				}
+
+				res, uErr := fileUC.UploadEncryptedImage(c.Request.Context(), userID, deviceID, fileHeader.Filename, rawBytes, targetFolderID)
+				if uErr != nil {
+					errMsgs = append(errMsgs, uErr.Error())
+					continue
+				}
+
+				uploaded = append(uploaded, res)
+			}
+
+			if len(uploaded) == 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Upload failed", "details": errMsgs})
 				return
 			}
-			defer file.Close()
 
-			rawBytes, err := io.ReadAll(file)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read file bytes"})
-				return
+			if len(uploaded) == 1 {
+				c.JSON(http.StatusOK, uploaded[0])
+			} else {
+				c.JSON(http.StatusOK, gin.H{
+					"count": len(uploaded),
+					"files": uploaded,
+				})
 			}
-
-			res, err := fileUC.UploadEncryptedImage(c.Request.Context(), userID, deviceID, fileHeader.Filename, rawBytes)
-			if err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-				return
-			}
-
-			c.JSON(http.StatusOK, res)
 		})
 
 		// Decrypt and stream image directly (for viewing in browser/app)

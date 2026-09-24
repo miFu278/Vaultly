@@ -219,9 +219,15 @@ func (uc *FileUseCase) UploadEncryptedImage(
 	deviceID *uuid.UUID,
 	fileName string,
 	rawImage []byte,
+	folderID ...*uuid.UUID,
 ) (*dto.EncryptedImageUploadResponse, error) {
 	if len(rawImage) == 0 {
 		return nil, domain.ErrInvalidImage
+	}
+
+	var targetFolderID *uuid.UUID
+	if len(folderID) > 0 {
+		targetFolderID = folderID[0]
 	}
 
 	// 1. Validate image format
@@ -255,6 +261,7 @@ func (uc *FileUseCase) UploadEncryptedImage(
 	fileEntity := entity.File{
 		ID:          fileID,
 		UserID:      userID,
+		FolderID:    targetFolderID,
 		R2ObjectKey: objectKey,
 		Size:        int64(len(ciphertext)),
 		ContentType: detectedMime,
