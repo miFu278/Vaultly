@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -152,9 +153,18 @@ func (uc *FileUseCase) DownloadFile(ctx context.Context, userID, deviceID, fileI
 		return nil, err
 	}
 
+	wrappedKey := ""
 	fk, err := uc.fileRepo.GetFileKey(ctx, fileID, deviceID)
-	if err != nil {
-		return nil, err
+	if err == nil {
+		wrappedKey = fk.WrappedKey
+	} else {
+		// Fallback: if no device key registered, extract key from file.Nonce
+		parts := strings.Split(file.Nonce, ":")
+		if len(parts) >= 2 {
+			wrappedKey = parts[1]
+		} else {
+			wrappedKey = file.Nonce
+		}
 	}
 
 	presignedURL, err := uc.storage.GeneratePresignedGetURL(ctx, file.R2ObjectKey)
@@ -162,10 +172,15 @@ func (uc *FileUseCase) DownloadFile(ctx context.Context, userID, deviceID, fileI
 		return nil, fmt.Errorf("failed to generate download URL: %w", err)
 	}
 
+	nonce := file.Nonce
+	if strings.Contains(file.Nonce, ":") {
+		nonce = strings.Split(file.Nonce, ":")[0]
+	}
+
 	return &dto.DownloadResponse{
 		PresignedURL: presignedURL,
-		WrappedKey:   fk.WrappedKey,
-		Nonce:        file.Nonce,
+		WrappedKey:   wrappedKey,
+		Nonce:        nonce,
 		ContentType:  file.ContentType,
 		Size:         file.Size,
 	}, nil
@@ -251,6 +266,8 @@ func (uc *FileUseCase) UploadEncryptedImage(
 	fileID := uuid.New()
 	objectKey := fmt.Sprintf("%s/%s", userID.String(), fileID.String())
 	headerHex := hex.EncodeToString(header)
+	keyHex := hex.EncodeToString(fileKey)
+	combinedNonce := fmt.Sprintf("%s:%s", headerHex, keyHex)
 
 	// 4. Put ciphertext directly to storage
 	if err := uc.storage.PutObject(ctx, objectKey, ciphertext, "application/octet-stream"); err != nil {
@@ -265,7 +282,7 @@ func (uc *FileUseCase) UploadEncryptedImage(
 		R2ObjectKey: objectKey,
 		Size:        int64(len(ciphertext)),
 		ContentType: detectedMime,
-		Nonce:       headerHex,
+		Nonce:       combinedNonce,
 		Status:      entity.FileStatusReady,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
@@ -376,6 +393,20 @@ func (uc *FileUseCase) DownloadAndDecryptImage(
 					rawKey = k
 					break
 				}
+			}
+		}
+	}
+
+	// Fallback check if key was stored in file.Nonce (format: headerHex:keyHex or keyHex)
+	if len(rawKey) == 0 && file.Nonce != "" {
+		parts := strings.Split(file.Nonce, ":")
+		if len(parts) >= 2 {
+			if k, err := hex.DecodeString(parts[1]); err == nil && len(k) == 32 {
+				rawKey = k
+			}
+		} else if len(parts) == 1 {
+			if k, err := hex.DecodeString(parts[0]); err == nil && len(k) == 32 {
+				rawKey = k
 			}
 		}
 	}

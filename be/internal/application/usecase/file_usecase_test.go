@@ -218,3 +218,49 @@ func TestFileUseCase_UploadAndDecryptImage(t *testing.T) {
 		t.Fatal("Decrypted image does not match original uploaded image")
 	}
 }
+
+func TestUploadAndDecryptWithoutDevice(t *testing.T) {
+	fileRepo := NewMockFileRepo()
+	deviceRepo := NewMockDeviceRepo()
+	cfg := &config.Config{
+		R2BucketName:                  "test-bucket",
+		PresignedURLExpirationMinutes: 15,
+	}
+	storageSvc, err := storage.NewS3StorageService(cfg)
+	if err != nil {
+		t.Fatalf("NewS3StorageService failed: %v", err)
+	}
+	cryptoService := crypto.NewSodiumCryptoService()
+
+	fileUC := usecase.NewFileUseCase(fileRepo, deviceRepo, storageSvc, cryptoService)
+	userID := uuid.New()
+
+	// PNG magic bytes
+	rawPNG := append([]byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}, bytes.Repeat([]byte("testpngdata"), 50)...)
+
+	// 1. Upload without deviceID and with 0 registered devices
+	uploadResp, err := fileUC.UploadEncryptedImage(context.Background(), userID, nil, "screenshot.png", rawPNG)
+	if err != nil {
+		t.Fatalf("UploadEncryptedImage without device failed: %v", err)
+	}
+
+	if uploadResp.ContentType != "image/png" {
+		t.Fatalf("Expected contentType image/png, got %s", uploadResp.ContentType)
+	}
+
+	// 2. Download and decrypt directly (as done by GET /files/:id/view without device keys)
+	decryptedBytes, mimeType, err := fileUC.DownloadAndDecryptImage(context.Background(), userID, nil, uploadResp.FileID)
+	if err != nil {
+		t.Fatalf("DownloadAndDecryptImage directly failed: %v", err)
+	}
+
+	if mimeType != "image/png" {
+		t.Fatalf("Expected mimeType image/png, got %s", mimeType)
+	}
+
+	if !bytes.Equal(rawPNG, decryptedBytes) {
+		t.Fatal("Decrypted image does not match original uploaded image")
+	}
+}
+
+

@@ -366,6 +366,7 @@ func RegisterFileGinRoutes(r *gin.Engine, fileUC *usecase.FileUseCase, authMiddl
 				return
 			}
 
+			c.Header("Cache-Control", "private, max-age=86400")
 			c.Data(http.StatusOK, contentType, decryptedBytes)
 		})
 	}
