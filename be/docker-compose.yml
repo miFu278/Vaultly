@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: vaultly-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vaultly
+      POSTGRES_PASSWORD: vaultly_secret
+      POSTGRES_DB: vaultly
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations/001_initial_schema.up.sql:/docker-entrypoint-initdb.d/01-init.sql
+    networks:
+      - vaultly-network
+
+volumes:
+  postgres_data:
+
+networks:
+  vaultly-network:
+    driver: bridge
