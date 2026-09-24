@@ -2,43 +2,139 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/folder.dart';
 import '../models/photo_item.dart';
+
+class UploadImageItem {
+  final Uint8List bytes;
+  final String fileName;
+
+  const UploadImageItem({required this.bytes, required this.fileName});
+}
 
 class ApiService {
   static final ApiService _instance = ApiService._internal();
   factory ApiService() => _instance;
   ApiService._internal();
 
+  static const String _kBaseUrlKey = 'vaultly_base_url';
+  static const String _kTokenKey = 'vaultly_jwt_token';
+  static const String _kEmailKey = 'vaultly_user_email';
+  static const String _kUserIdKey = 'vaultly_user_id';
+  static const String _kPinKey = 'vaultly_vault_pin';
+
+  // Timeout for PIN lock (15 minutes)
+  static const int kPinTimeoutMinutes = 15;
+
   // Configurable base URL (Production Render API)
-  String _baseUrl = 'https://vaultly-ghqy.onrender.com';
+  String _baseUrl = const String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://vaultly-ghqy.onrender.com',
+  );
   String get baseUrl => _baseUrl;
   set baseUrl(String url) {
     _baseUrl = url.replaceAll(RegExp(r'/+$'), '');
+    _persistBaseUrl(_baseUrl);
   }
 
   String? _token;
   String? _userEmail;
   String? _userId;
+  String? _savedPin;
+  DateTime? _lastUnlockedAt;
   bool _isOnline = false;
+  bool _isInitialized = false;
 
   String? get token => _token;
   String? get userEmail => _userEmail;
   String? get userId => _userId;
   bool get isAuthenticated => _token != null && _token!.isNotEmpty;
   bool get isOnline => _isOnline;
+  bool get hasPin => _savedPin != null && _savedPin!.isNotEmpty;
 
-  // Set session manually or from login
-  void setSession({required String token, String? email, String? userId}) {
+  /// Check whether the 6-digit PIN screen must be shown
+  bool get isPinLocked {
+    if (!isAuthenticated) return false;
+    if (!hasPin) return true; // Need to set up PIN
+    if (_lastUnlockedAt == null) return true; // Process was fresh / killed
+    final diff = DateTime.now().difference(_lastUnlockedAt!);
+    return diff.inMinutes >= kPinTimeoutMinutes;
+  }
+
+  /// Initialize and restore stored credentials & PIN from SharedPreferences
+  Future<void> init() async {
+    if (_isInitialized) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedUrl = prefs.getString(_kBaseUrlKey);
+      if (savedUrl != null && savedUrl.isNotEmpty) {
+        _baseUrl = savedUrl;
+      }
+      _token = prefs.getString(_kTokenKey);
+      _userEmail = prefs.getString(_kEmailKey);
+      _userId = prefs.getString(_kUserIdKey);
+      _savedPin = prefs.getString(_kPinKey);
+      _isInitialized = true;
+    } catch (e) {
+      debugPrint('Error initializing ApiService: $e');
+    }
+  }
+
+  Future<void> _persistBaseUrl(String url) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kBaseUrlKey, url);
+  }
+
+  Future<void> _saveSession(String token, String? email, String? userId) async {
     _token = token;
     _userEmail = email;
     _userId = userId;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kTokenKey, token);
+    if (email != null) await prefs.setString(_kEmailKey, email);
+    if (userId != null) await prefs.setString(_kUserIdKey, userId);
   }
 
-  void logout() {
+  /// Set up or update the 6-digit PIN
+  Future<void> setPin(String pin) async {
+    _savedPin = pin;
+    _lastUnlockedAt = DateTime.now();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kPinKey, pin);
+  }
+
+  /// Verify entered 6-digit PIN
+  bool verifyAndUnlockPin(String pin) {
+    if (_savedPin != null && _savedPin == pin) {
+      _lastUnlockedAt = DateTime.now();
+      return true;
+    }
+    return false;
+  }
+
+  /// Explicitly lock the vault (e.g. user taps lock or 15 mins passed)
+  void lockPin() {
+    _lastUnlockedAt = null;
+  }
+
+  /// Reset unlock timer on user interaction
+  void touchActivity() {
+    if (_lastUnlockedAt != null) {
+      _lastUnlockedAt = DateTime.now();
+    }
+  }
+
+  /// Log out and clear session credentials
+  Future<void> logout() async {
     _token = null;
     _userEmail = null;
     _userId = null;
+    _lastUnlockedAt = null;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kTokenKey);
+    await prefs.remove(_kEmailKey);
+    await prefs.remove(_kUserIdKey);
   }
 
   Map<String, String> get _authHeaders => {
@@ -72,11 +168,10 @@ class ApiService {
 
       final data = jsonDecode(utf8.decode(res.bodyBytes));
       if (res.statusCode == 200 || res.statusCode == 201) {
-        _token = data['token'];
-        if (data['user'] != null) {
-          _userId = data['user']['id'];
-          _userEmail = data['user']['email'];
-        }
+        final token = data['token'] as String;
+        final uId = data['user']?['id']?.toString();
+        final uEmail = data['user']?['email']?.toString() ?? email.trim();
+        await _saveSession(token, uEmail, uId);
         _isOnline = true;
         return {'success': true, 'data': data};
       } else {
@@ -99,11 +194,10 @@ class ApiService {
 
       final data = jsonDecode(utf8.decode(res.bodyBytes));
       if (res.statusCode == 200) {
-        _token = data['token'];
-        if (data['user'] != null) {
-          _userId = data['user']['id'];
-          _userEmail = data['user']['email'];
-        }
+        final token = data['token'] as String;
+        final uId = data['user']?['id']?.toString();
+        final uEmail = data['user']?['email']?.toString() ?? email.trim();
+        await _saveSession(token, uEmail, uId);
         _isOnline = true;
         return {'success': true, 'data': data};
       } else {
@@ -201,7 +295,6 @@ class ApiService {
           ? (DateTime.tryParse(createdAtStr) ?? DateTime.now())
           : DateTime.now();
 
-      // Image view URL with auth token query param for seamless Image.network loading
       final viewUrl = '$_baseUrl/files/$fileId/view?token=$_token';
 
       return PhotoItem(
@@ -228,30 +321,77 @@ class ApiService {
     return res.statusCode == 200;
   }
 
-  /// Upload raw image bytes to backend (encrypted server-side with libsodium and saved to R2)
+  /// Upload a single image
   Future<bool> uploadImage({
     required Uint8List bytes,
     required String fileName,
     String? folderId,
   }) async {
-    if (!isAuthenticated) return false;
-
-    final request = http.MultipartRequest('POST', Uri.parse('$_baseUrl/files/upload'));
-    request.headers.addAll({
-      if (_token != null) 'Authorization': 'Bearer $_token',
-    });
-
-    request.files.add(
-      http.MultipartFile.fromBytes(
-        'file',
-        bytes,
-        filename: fileName,
-      ),
+    final result = await uploadMultipleImages(
+      files: [UploadImageItem(bytes: bytes, fileName: fileName)],
+      folderId: folderId,
     );
+    return result['success'] == true && (result['uploadedCount'] as int? ?? 0) > 0;
+  }
 
-    final streamedResponse = await request.send();
-    final res = await http.Response.fromStream(streamedResponse);
-    return res.statusCode == 200 || res.statusCode == 201;
+  /// Upload multiple images (supports batch upload with progress notification)
+  Future<Map<String, dynamic>> uploadMultipleImages({
+    required List<UploadImageItem> files,
+    String? folderId,
+    void Function(int completed, int total)? onProgress,
+  }) async {
+    if (!isAuthenticated) {
+      return {'success': false, 'error': 'Not authenticated'};
+    }
+    if (files.isEmpty) {
+      return {'success': true, 'uploadedCount': 0};
+    }
+
+    int successCount = 0;
+    final List<String> errors = [];
+
+    for (int i = 0; i < files.length; i++) {
+      final item = files[i];
+      try {
+        final request = http.MultipartRequest('POST', Uri.parse('$_baseUrl/files/upload'));
+        request.headers.addAll({
+          if (_token != null) 'Authorization': 'Bearer $_token',
+        });
+
+        if (folderId != null && folderId != 'all') {
+          request.fields['folder_id'] = folderId;
+        }
+
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            'file',
+            item.bytes,
+            filename: item.fileName,
+          ),
+        );
+
+        final streamedResponse = await request.send();
+        final res = await http.Response.fromStream(streamedResponse);
+
+        if (res.statusCode == 200 || res.statusCode == 201) {
+          successCount++;
+        } else {
+          final errBody = res.body;
+          errors.add('${item.fileName}: $errBody');
+        }
+      } catch (e) {
+        errors.add('${item.fileName}: $e');
+      }
+
+      onProgress?.call(i + 1, files.length);
+    }
+
+    return {
+      'success': successCount > 0,
+      'uploadedCount': successCount,
+      'total': files.length,
+      'errors': errors,
+    };
   }
 
   static String _formatBytes(int bytes) {
