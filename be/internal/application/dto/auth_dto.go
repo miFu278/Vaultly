@@ -20,8 +20,21 @@ type LoginRequest struct {
 type UserDTO struct {
 	ID        uuid.UUID `json:"id"`
 	Email     string    `json:"email"`
+	HasPIN    bool      `json:"has_pin"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type SetPINRequest struct {
+	PIN string `json:"pin" binding:"required,len=6" example:"123456"`
+}
+
+type VerifyPINRequest struct {
+	PIN string `json:"pin" binding:"required,len=6" example:"123456"`
+}
+
+type VerifyPINResponse struct {
+	Valid bool `json:"valid"`
 }
 
 type AuthResponse struct {
@@ -33,6 +46,7 @@ func ToUserDTO(u *entity.User) UserDTO {
 	return UserDTO{
 		ID:        u.ID,
 		Email:     u.Email,
+		HasPIN:    u.PINHash != "",
 		CreatedAt: u.CreatedAt,
 		UpdatedAt: u.UpdatedAt,
 	}

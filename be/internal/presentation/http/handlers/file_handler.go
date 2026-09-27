@@ -186,6 +186,37 @@ func RegisterFileRoutes(api huma.API, fileUC *usecase.FileUseCase) {
 	})
 
 	huma.Register(api, huma.Operation{
+		OperationID: "moveFileToFolder",
+		Method:      http.MethodPatch,
+		Path:        "/files/{id}/folder",
+		Summary:     "Move file to a different folder (or remove from folder)",
+		Tags:        []string{"Files"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+	}, func(ctx context.Context, input *struct {
+		ID   string     `path:"id" doc:"File UUID"`
+		Body struct {
+			FolderID *uuid.UUID `json:"folder_id" doc:"Target folder UUID, or null to remove from folder"`
+		}
+	}) (*MessageOutput, error) {
+		userID, err := GetUserID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		fileID, err := uuid.Parse(input.ID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("Invalid file ID format")
+		}
+
+		if err := fileUC.MoveFileToFolder(ctx, userID, fileID, input.Body.FolderID); err != nil {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+
+		resp := &MessageOutput{}
+		resp.Body.Message = "File moved successfully"
+		return resp, nil
+	})
+
+	huma.Register(api, huma.Operation{
 		OperationID: "getThumbnail",
 		Method:      http.MethodGet,
 		Path:        "/files/{id}/thumbnail",

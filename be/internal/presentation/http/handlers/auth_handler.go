@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/google/uuid"
 	"vaultly-be/internal/application/dto"
 	"vaultly-be/internal/application/usecase"
 )
@@ -22,11 +21,20 @@ type AuthOutput struct {
 	Body dto.AuthResponse
 }
 
-type MeOutput struct {
-	Body struct {
-		UserID uuid.UUID `json:"user_id"`
-		Email  string    `json:"email"`
-	}
+type SetPINInput struct {
+	Body dto.SetPINRequest
+}
+
+type VerifyPINInput struct {
+	Body dto.VerifyPINRequest
+}
+
+type VerifyPINOutput struct {
+	Body dto.VerifyPINResponse
+}
+
+type MeUserOutput struct {
+	Body dto.UserDTO
 }
 
 func RegisterAuthRoutes(api huma.API, authUC *usecase.AuthUseCase) {
@@ -62,19 +70,59 @@ func RegisterAuthRoutes(api huma.API, authUC *usecase.AuthUseCase) {
 		OperationID: "getCurrentUser",
 		Method:      http.MethodGet,
 		Path:        "/auth/me",
-		Summary:     "Get current authenticated user profile",
+		Summary:     "Get current authenticated user profile (includes has_pin)",
 		Tags:        []string{"Auth"},
 		Security:    []map[string][]string{{"bearerAuth": {}}},
-	}, func(ctx context.Context, input *struct{}) (*MeOutput, error) {
+	}, func(ctx context.Context, input *struct{}) (*MeUserOutput, error) {
 		userID, err := GetUserID(ctx)
 		if err != nil {
 			return nil, err
 		}
-		email, _ := ctx.Value(EmailKey).(string)
+		userDTO, err := authUC.GetMe(ctx, userID)
+		if err != nil {
+			return nil, huma.Error404NotFound(err.Error())
+		}
+		return &MeUserOutput{Body: *userDTO}, nil
+	})
 
-		resp := &MeOutput{}
-		resp.Body.UserID = userID
-		resp.Body.Email = email
+	// PIN management endpoints
+	huma.Register(api, huma.Operation{
+		OperationID: "setPIN",
+		Method:      http.MethodPost,
+		Path:        "/auth/pin/set",
+		Summary:     "Set or update 6-digit PIN (synced across all devices)",
+		Tags:        []string{"Auth"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+	}, func(ctx context.Context, input *SetPINInput) (*MessageOutput, error) {
+		userID, err := GetUserID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if err := authUC.SetPIN(ctx, userID, input.Body.PIN); err != nil {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+		resp := &MessageOutput{}
+		resp.Body.Message = "PIN set successfully"
 		return resp, nil
 	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "verifyPIN",
+		Method:      http.MethodPost,
+		Path:        "/auth/pin/verify",
+		Summary:     "Verify 6-digit PIN",
+		Tags:        []string{"Auth"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+	}, func(ctx context.Context, input *VerifyPINInput) (*VerifyPINOutput, error) {
+		userID, err := GetUserID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		valid, err := authUC.VerifyPIN(ctx, userID, input.Body.PIN)
+		if err != nil {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+		return &VerifyPINOutput{Body: dto.VerifyPINResponse{Valid: valid}}, nil
+	})
 }
+

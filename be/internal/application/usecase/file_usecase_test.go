@@ -115,6 +115,14 @@ func (m *MockFileRepo) CompleteUploadTx(ctx context.Context, userID, fileID uuid
 	return nil
 }
 
+func (m *MockFileRepo) UpdateFolderID(ctx context.Context, id, userID uuid.UUID, folderID *uuid.UUID) error {
+	if f, ok := m.files[id]; ok && f.UserID == userID {
+		f.FolderID = folderID
+		return nil
+	}
+	return nil
+}
+
 // MockDeviceRepo implements DeviceRepository in memory for unit testing
 type MockDeviceRepo struct {
 	devices map[uuid.UUID]entity.Device

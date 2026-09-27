@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -96,4 +97,31 @@ func (uc *AuthUseCase) GetMe(ctx context.Context, userID uuid.UUID) (*dto.UserDT
 	}
 	userDTO := dto.ToUserDTO(user)
 	return &userDTO, nil
+}
+
+func (uc *AuthUseCase) SetPIN(ctx context.Context, userID uuid.UUID, pin string) error {
+	pin = strings.TrimSpace(pin)
+	if len(pin) != 6 {
+		return errors.New("PIN must be exactly 6 digits")
+	}
+	hashedPIN, err := uc.hasher.Hash(pin)
+	if err != nil {
+		return err
+	}
+	return uc.userRepo.UpdatePIN(ctx, userID, hashedPIN)
+}
+
+func (uc *AuthUseCase) VerifyPIN(ctx context.Context, userID uuid.UUID, pin string) (bool, error) {
+	pin = strings.TrimSpace(pin)
+	user, err := uc.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	if user.PINHash == "" {
+		return false, errors.New("no PIN set for this user")
+	}
+	if err := uc.hasher.Compare(user.PINHash, pin); err != nil {
+		return false, nil
+	}
+	return true, nil
 }

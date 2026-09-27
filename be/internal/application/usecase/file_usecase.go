@@ -432,3 +432,9 @@ func (uc *FileUseCase) DownloadAndDecryptImage(
 func idOrNil(id uuid.UUID) uuid.UUID {
 	return id
 }
+
+// MoveFileToFolder changes the folder_id of a file
+func (uc *FileUseCase) MoveFileToFolder(ctx context.Context, userID, fileID uuid.UUID, folderID *uuid.UUID) error {
+	return uc.fileRepo.UpdateFolderID(ctx, fileID, userID, folderID)
+}
+

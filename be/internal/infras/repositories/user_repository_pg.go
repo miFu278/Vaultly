@@ -38,9 +38,9 @@ func (r *UserRepositoryPG) Create(ctx context.Context, user *entity.User) error 
 
 func (r *UserRepositoryPG) GetByID(ctx context.Context, id uuid.UUID) (*entity.User, error) {
 	var user entity.User
-	query := `SELECT id, email, password_hash, created_at, updated_at FROM users WHERE id = $1`
+	query := `SELECT id, email, password_hash, COALESCE(pin_hash, ''), created_at, updated_at FROM users WHERE id = $1`
 	err := r.pool.QueryRow(ctx, query, id).
-		Scan(&user.ID, &user.Email, &user.PasswordHash, &user.CreatedAt, &user.UpdatedAt)
+		Scan(&user.ID, &user.Email, &user.PasswordHash, &user.PINHash, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrUserNotFound
@@ -52,9 +52,9 @@ func (r *UserRepositoryPG) GetByID(ctx context.Context, id uuid.UUID) (*entity.U
 
 func (r *UserRepositoryPG) GetByEmail(ctx context.Context, email string) (*entity.User, error) {
 	var user entity.User
-	query := `SELECT id, email, password_hash, created_at, updated_at FROM users WHERE email = $1`
+	query := `SELECT id, email, password_hash, COALESCE(pin_hash, ''), created_at, updated_at FROM users WHERE email = $1`
 	err := r.pool.QueryRow(ctx, query, email).
-		Scan(&user.ID, &user.Email, &user.PasswordHash, &user.CreatedAt, &user.UpdatedAt)
+		Scan(&user.ID, &user.Email, &user.PasswordHash, &user.PINHash, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrUserNotFound
@@ -62,4 +62,10 @@ func (r *UserRepositoryPG) GetByEmail(ctx context.Context, email string) (*entit
 		return nil, err
 	}
 	return &user, nil
+}
+
+func (r *UserRepositoryPG) UpdatePIN(ctx context.Context, id uuid.UUID, pinHash string) error {
+	query := `UPDATE users SET pin_hash = $1, updated_at = NOW() WHERE id = $2`
+	_, err := r.pool.Exec(ctx, query, pinHash, id)
+	return err
 }

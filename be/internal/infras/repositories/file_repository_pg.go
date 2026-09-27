@@ -290,3 +290,15 @@ func (r *FileRepositoryPG) CompleteUploadTx(ctx context.Context, userID, fileID 
 
 	return tx.Commit(ctx)
 }
+
+func (r *FileRepositoryPG) UpdateFolderID(ctx context.Context, id, userID uuid.UUID, folderID *uuid.UUID) error {
+	query := `UPDATE files SET folder_id = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3`
+	tag, err := r.pool.Exec(ctx, query, folderID, id, userID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrFileNotFound
+	}
+	return nil
+}
