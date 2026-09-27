@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/folder.dart';
+import '../theme/app_tokens.dart';
 
 class FolderSidebar extends StatelessWidget {
   final List<Folder> folders;
@@ -23,25 +24,22 @@ class FolderSidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final colors = AppColors.of(context);
 
-    // Fixed width when drawer, animated width when desktop sidebar
+    // Fixed width when drawer, collapsed or expanded when desktop sidebar
     final double width = isDrawer
         ? 280.0
-        : (isCollapsed ? 68.0 : 250.0);
+        : (isCollapsed ? AppSpacing.sidebarCollapsed : AppSpacing.sidebarExpanded);
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeInOut,
+    return Container(
       width: width,
       decoration: BoxDecoration(
-        color: theme.scaffoldBackgroundColor,
+        color: colors.surface,
         border: isDrawer
             ? null
             : Border(
                 right: BorderSide(
-                  color: theme.dividerColor,
+                  color: colors.border,
                   width: 1,
                 ),
               ),
@@ -50,35 +48,36 @@ class FolderSidebar extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Header: Brand Title & Collapse Toggle
-          _buildHeader(context, isDark),
+          _buildHeader(context, colors),
 
-          const Divider(height: 1),
+          Divider(height: 1, color: colors.border),
 
           // Folder List
           Expanded(
             child: ListView.builder(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+              padding: const EdgeInsets.symmetric(
+                vertical: AppSpacing.sm,
+                horizontal: AppSpacing.sm,
+              ),
               itemCount: folders.length,
               itemBuilder: (context, index) {
                 final folder = folders[index];
                 final isSelected = folder.id == selectedFolderId;
-                return _buildFolderItem(context, folder, isSelected, isDark);
+                return _buildFolderItem(context, folder, isSelected, colors);
               },
             ),
           ),
 
-          const Divider(height: 1),
+          Divider(height: 1, color: colors.border),
 
           // Footer: Add Folder & Toggle Collapse
-          _buildFooter(context, isDark),
+          _buildFooter(context, colors),
         ],
       ),
     );
   }
 
-  Widget _buildHeader(BuildContext context, bool isDark) {
-    final theme = Theme.of(context);
-
+  Widget _buildHeader(BuildContext context, AppColorsData colors) {
     if (isCollapsed && !isDrawer) {
       return Container(
         height: 56,
@@ -93,32 +92,32 @@ class FolderSidebar extends StatelessWidget {
 
     return Container(
       height: 56,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
       child: Row(
         children: [
-          // Secure Vault Icon
+          // Shield / Vault Mark (Circle is allowed for shield mark)
           Container(
-            padding: const EdgeInsets.all(6),
+            width: 32,
+            height: 32,
             decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(8),
+              color: colors.surfaceMuted,
+              shape: BoxShape.circle,
+              border: Border.all(color: colors.border, width: 1),
             ),
             child: Icon(
-              Icons.lock_outline_rounded,
-              size: 18,
-              color: theme.colorScheme.primary,
+              Icons.shield_outlined,
+              size: 16,
+              color: colors.foreground,
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: AppSpacing.sm + 2),
 
-          // Brand Title
-          const Expanded(
+          // Brand Title (700 weight only for brand mark)
+          Expanded(
             child: Text(
               'Vaultly',
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.4,
+              style: AppTypography.brand.copyWith(
+                color: colors.foreground,
               ),
             ),
           ),
@@ -143,16 +142,16 @@ class FolderSidebar extends StatelessWidget {
     );
   }
 
-  Widget _buildFolderCoverAvatar(Folder folder, double size, bool isDark) {
+  Widget _buildFolderCoverAvatar(Folder folder, double size, AppColorsData colors) {
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(size > 40 ? 8 : 6),
-        color: isDark ? const Color(0xFF27272A) : const Color(0xFFE5E7EB),
+        borderRadius: AppRadii.xs,
+        color: colors.surfaceMuted,
         border: Border.all(
-          color: isDark ? Colors.white12 : Colors.black12,
-          width: 0.8,
+          color: colors.border,
+          width: 1,
         ),
       ),
       clipBehavior: Clip.antiAlias,
@@ -163,13 +162,13 @@ class FolderSidebar extends StatelessWidget {
               errorBuilder: (context, error, stackTrace) => Icon(
                 Icons.photo_outlined,
                 size: size * 0.5,
-                color: isDark ? Colors.white38 : Colors.black38,
+                color: colors.foregroundMuted,
               ),
             )
           : Icon(
               folder.icon,
               size: size * 0.5,
-              color: isDark ? Colors.white38 : Colors.black38,
+              color: colors.foregroundMuted,
             ),
     );
   }
@@ -178,78 +177,77 @@ class FolderSidebar extends StatelessWidget {
     BuildContext context,
     Folder folder,
     bool isSelected,
-    bool isDark,
+    AppColorsData colors,
   ) {
-    final theme = Theme.of(context);
-    final activeBg = isDark
-        ? const Color(0xFF27272A)
-        : const Color(0xFFE5E7EB);
-
     final itemWidget = Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
       child: Material(
-        color: isSelected ? activeBg : Colors.transparent,
-        borderRadius: BorderRadius.circular(10),
+        color: isSelected ? colors.surfaceMuted : Colors.transparent,
+        borderRadius: AppRadii.md,
         clipBehavior: Clip.antiAlias,
-        child: ListTile(
-          contentPadding: EdgeInsets.symmetric(
-            horizontal: (isCollapsed && !isDrawer) ? 0 : 10,
-            vertical: (isCollapsed && !isDrawer) ? 6 : 4,
-          ),
-          dense: true,
-          leading: (isCollapsed && !isDrawer)
-              ? null
-              : _buildFolderCoverAvatar(folder, 42, isDark),
-          title: (isCollapsed && !isDrawer)
-              ? Center(child: _buildFolderCoverAvatar(folder, 36, isDark))
-              : Text(
-                  folder.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                    color: isSelected
-                        ? theme.colorScheme.onSurface
-                        : theme.colorScheme.onSurface.withValues(alpha: 0.9),
-                  ),
-                ),
-          subtitle: (isCollapsed && !isDrawer)
-              ? null
-              : Row(
-                  children: [
-                    Text(
-                      '${folder.photoCount} ảnh',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
-                      ),
-                    ),
-                    if (folder.isSecure) ...[
-                      const SizedBox(width: 4),
-                      Icon(
-                        Icons.lock_outline,
-                        size: 11,
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
-                      ),
-                    ],
-                  ],
-                ),
-          trailing: (isCollapsed && !isDrawer)
-              ? null
-              : (isSelected
-                  ? Icon(
-                      Icons.check_circle_rounded,
-                      size: 16,
-                      color: theme.colorScheme.primary,
-                    )
-                  : null),
+        child: InkWell(
           onTap: () {
             onSelectFolder(folder);
             if (isDrawer) {
               Navigator.of(context).pop();
             }
           },
+          borderRadius: AppRadii.md,
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: (isCollapsed && !isDrawer) ? AppSpacing.xs : AppSpacing.sm + 2,
+              vertical: (isCollapsed && !isDrawer) ? AppSpacing.sm : AppSpacing.sm,
+            ),
+            child: Row(
+              children: [
+                _buildFolderCoverAvatar(
+                  folder,
+                  (isCollapsed && !isDrawer) ? 36 : 38,
+                  colors,
+                ),
+                if (!isCollapsed || isDrawer) ...[
+                  const SizedBox(width: AppSpacing.sm + 2),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          folder.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.body.copyWith(
+                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                            color: isSelected ? colors.foreground : colors.foreground,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Text(
+                              '${folder.photoCount} ảnh',
+                              style: AppTypography.caption.copyWith(
+                                color: colors.foregroundMuted,
+                                fontFeatures: AppTypography.tabularFigures,
+                              ),
+                            ),
+                            if (folder.isSecure) ...[
+                              const SizedBox(width: AppSpacing.xs),
+                              Icon(
+                                Icons.lock_outline,
+                                size: 10,
+                                color: colors.foregroundMuted,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -265,7 +263,7 @@ class FolderSidebar extends StatelessWidget {
     return itemWidget;
   }
 
-  Widget _buildFooter(BuildContext context, bool isDark) {
+  Widget _buildFooter(BuildContext context, AppColorsData colors) {
     if (isCollapsed && !isDrawer) {
       return Container(
         height: 56,
@@ -279,18 +277,18 @@ class FolderSidebar extends StatelessWidget {
     }
 
     return Padding(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(AppSpacing.md),
       child: OutlinedButton.icon(
         onPressed: onCreateFolder,
         icon: const Icon(Icons.create_new_folder_outlined, size: 16),
-        label: const Text(
-          'Thư mục mới',
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-        ),
+        label: const Text('Thư mục mới'),
         style: OutlinedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          padding: const EdgeInsets.symmetric(
+            vertical: AppSpacing.sm + 2,
+            horizontal: AppSpacing.md,
+          ),
           alignment: Alignment.centerLeft,
+          textStyle: AppTypography.body,
         ),
       ),
     );

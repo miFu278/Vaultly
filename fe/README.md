@@ -12,17 +12,22 @@ fe/lib/
 ├── theme/
 │   └── app_theme.dart              # ThemeData trung tính (Light/Dark mode Material 3)
 ├── models/
-│   ├── folder.dart                 # Model Folder (id, name, icon, photoCount, isSecure)
+│   ├── folder.dart                 # Model Folder (id, name, icon, photoCount, isSecure, coverUrl)
 │   └── photo_item.dart             # Model PhotoItem (id, folderId, title, url, size, isEncrypted)
 ├── data/
-│   └── mock_data.dart              # Mock data các thư mục bảo mật & danh sách ảnh mẫu
+│   └── mock_data.dart              # Mock data dùng khi chưa đăng nhập / offline
+├── services/
+│   └── api_service.dart            # REST client + session/PIN + upload (ApiException cho lỗi HTTP)
 ├── widgets/
 │   ├── folder_sidebar.dart         # Sidebar dạng 1 cột dọc (hỗ trợ collapse 68px/250px & Drawer)
 │   ├── photo_grid.dart             # Lưới ảnh GridView.builder động (2x/3x/4x, pinch-to-zoom)
 │   ├── photo_grid_item.dart        # Ô ảnh vuông 1:1, hover scale nhẹ (web), long-press (mobile)
 │   └── photo_detail_dialog.dart    # Modal xem ảnh phóng to với InteractiveViewer & metadata
 └── screens/
-    └── home_screen.dart            # LayoutBuilder điều phối 2-pane (Web) và Drawer (Mobile)
+    ├── home_screen.dart            # LayoutBuilder điều phối 2-pane (Web) và Drawer (Mobile)
+    ├── auth_screen.dart            # Đăng nhập / đăng ký + cấu hình API base URL
+    ├── pin_lock_screen.dart        # Khóa/mở Vault bằng PIN 6 số (đồng bộ server)
+    └── photo_viewer_screen.dart    # Trình xem ảnh full-screen (PageView + filmstrip)
 ```
 
 ---
@@ -49,6 +54,16 @@ fe/lib/
 4. **Style & Theme**:
    - Tông màu trung tính (đen, trắng, xám), typography chuẩn Material 3.
    - Hỗ trợ đầy đủ **Light mode** và **Dark mode**, chuyển đổi tức thì qua nút trên AppBar.
+
+5. **Đồng bộ dữ liệu với backend**:
+   - Nạp thư mục + toàn bộ ảnh một lần, tính `photoCount` và ảnh bìa theo từng thư mục (backend không trả sẵn).
+   - Chuyển thư mục tức thì (lọc client-side), không phát sinh round-trip.
+   - Tự động đăng xuất + quay về dữ liệu mock khi token hết hạn (HTTP 401).
+
+6. **PIN bảo vệ Vault (đồng bộ đa thiết bị)**:
+   - PIN 6 số lưu cục bộ và đồng bộ lên server qua `/auth/pin/set`.
+   - Máy mới chưa có PIN cục bộ vẫn mở khóa được bằng `/auth/pin/verify`.
+   - Tự động khóa sau 15 phút không tương tác.
 
 ---
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/photo_item.dart';
+import '../theme/app_tokens.dart';
 
 class PhotoViewerScreen extends StatefulWidget {
   final List<PhotoItem> photos;
@@ -60,7 +61,7 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
     if (animate) {
       _thumbScrollController.animateTo(
         clampedOffset,
-        duration: const Duration(milliseconds: 250),
+        duration: const Duration(milliseconds: 200),
         curve: Curves.easeOut,
       );
     } else {
@@ -75,76 +76,84 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
   }
 
   void _showInfoSheet(PhotoItem photo) {
+    final colors = AppColors.of(context);
+
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1E1E22),
+      backgroundColor: colors.surface,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: AppRadii.radiusLg),
       ),
       builder: (ctx) {
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.lg,
+              vertical: AppSpacing.md,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Center(
                   child: Container(
-                    width: 36,
-                    height: 4,
+                    width: 32,
+                    height: 3,
                     decoration: BoxDecoration(
-                      color: Colors.white24,
-                      borderRadius: BorderRadius.circular(2),
+                      color: colors.border,
+                      borderRadius: AppRadii.xs,
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: AppSpacing.md),
                 Row(
                   children: [
-                    const Icon(Icons.info_outline, size: 20, color: Colors.white70),
-                    const SizedBox(width: 8),
-                    const Text(
+                    Icon(Icons.info_outline, size: 18, color: colors.foreground),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text(
                       'Thông tin ảnh',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: AppTypography.heading.copyWith(color: colors.foreground),
                     ),
                     const Spacer(),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: Colors.green.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.greenAccent.withValues(alpha: 0.5)),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.sm,
+                        vertical: AppSpacing.xxs,
                       ),
-                      child: const Row(
+                      decoration: BoxDecoration(
+                        color: colors.surfaceMuted,
+                        borderRadius: AppRadii.xs,
+                        border: Border.all(color: colors.border, width: 1),
+                      ),
+                      child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.shield_outlined, size: 12, color: Colors.greenAccent),
-                          SizedBox(width: 4),
+                          Icon(Icons.lock_outline, size: 11, color: colors.foreground),
+                          const SizedBox(width: AppSpacing.xs),
                           Text(
                             'E2EE Encrypted',
-                            style: TextStyle(fontSize: 11, color: Colors.greenAccent),
+                            style: AppTypography.caption.copyWith(
+                              color: colors.foreground,
+                            ),
                           ),
                         ],
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: AppSpacing.md),
+                Divider(height: 1, color: colors.border),
+                const SizedBox(height: AppSpacing.sm),
                 _InfoRow(label: 'Tên tệp', value: photo.title),
                 _InfoRow(
                   label: 'Ngày lưu',
                   value:
-                      '${photo.createdAt.hour.toString().padLeft(2, '0')}:${photo.createdAt.minute.toString().padLeft(2, '0')} • ${photo.createdAt.day}/${photo.createdAt.month}/${photo.createdAt.year}',
+                      '${photo.createdAt.hour.toString().padLeft(2, '0')}:${photo.createdAt.minute.toString().padLeft(2, '0')} • ${photo.createdAt.day.toString().padLeft(2, '0')}/${photo.createdAt.month.toString().padLeft(2, '0')}/${photo.createdAt.year}',
                 ),
                 _InfoRow(label: 'Dung lượng', value: photo.fileSize),
-                _InfoRow(label: 'Thuật toán', value: 'XChaCha20-Poly1305 (libsodium)'),
-                _InfoRow(label: 'Trạng thái khóa', value: 'Encrypted at client-side'),
-                const SizedBox(height: 12),
+                _InfoRow(label: 'Thuật toán', value: 'XChaCha20-Poly1305'),
+                _InfoRow(label: 'Trạng thái', value: 'Mã hóa đầu cuối (Client E2EE)'),
+                const SizedBox(height: AppSpacing.sm),
               ],
             ),
           ),
@@ -155,24 +164,25 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     final currentPhoto = widget.photos[_currentIndex];
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: colors.mediaCanvas,
       body: Focus(
         autofocus: true,
         onKeyEvent: (node, event) {
           if (event is KeyDownEvent) {
             if (event.logicalKey == LogicalKeyboardKey.arrowLeft && _currentIndex > 0) {
               _pageController.previousPage(
-                duration: const Duration(milliseconds: 250),
+                duration: const Duration(milliseconds: 200),
                 curve: Curves.easeOut,
               );
               return KeyEventResult.handled;
             } else if (event.logicalKey == LogicalKeyboardKey.arrowRight &&
                 _currentIndex < widget.photos.length - 1) {
               _pageController.nextPage(
-                duration: const Duration(milliseconds: 250),
+                duration: const Duration(milliseconds: 200),
                 curve: Curves.easeOut,
               );
               return KeyEventResult.handled;
@@ -207,15 +217,19 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                           fit: BoxFit.contain,
                           loadingBuilder: (context, child, progress) {
                             if (progress == null) return child;
-                            return const Center(
+                            return Center(
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                color: Colors.white70,
+                                color: colors.foregroundMuted,
                               ),
                             );
                           },
-                          errorBuilder: (context, error, stackTrace) => const Center(
-                            child: Icon(Icons.broken_image_outlined, size: 64, color: Colors.white38),
+                          errorBuilder: (context, error, stackTrace) => Center(
+                            child: Icon(
+                              Icons.broken_image_outlined,
+                              size: 48,
+                              color: colors.foregroundMuted,
+                            ),
                           ),
                         ),
                       ),
@@ -225,29 +239,30 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
               },
             ),
 
-            // Top AppBar (animated toggle)
+            // Top AppBar with scrim gradient
             Positioned(
               top: 0,
               left: 0,
               right: 0,
               child: AnimatedOpacity(
-                duration: const Duration(milliseconds: 200),
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOut,
                 opacity: _showChrome ? 1.0 : 0.0,
                 child: IgnorePointer(
                   ignoring: !_showChrome,
                   child: Container(
                     padding: EdgeInsets.only(
-                      top: MediaQuery.of(context).padding.top + 6,
-                      bottom: 10,
-                      left: 8,
-                      right: 12,
+                      top: MediaQuery.of(context).padding.top + AppSpacing.xs,
+                      bottom: AppSpacing.md,
+                      left: AppSpacing.sm,
+                      right: AppSpacing.md,
                     ),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          Colors.black.withValues(alpha: 0.8),
+                          colors.scrim.withValues(alpha: 0.8),
                           Colors.transparent,
                         ],
                       ),
@@ -255,11 +270,11 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                     child: Row(
                       children: [
                         IconButton(
-                          icon: const Icon(Icons.arrow_back, color: Colors.white),
+                          icon: const Icon(Icons.arrow_back, color: Colors.white, size: 20),
                           tooltip: 'Trở về',
                           onPressed: () => Navigator.pop(context),
                         ),
-                        const SizedBox(width: 4),
+                        const SizedBox(width: AppSpacing.xs),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -269,29 +284,27 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                                 currentPhoto.title,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
+                                style: AppTypography.heading.copyWith(
                                   color: Colors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                               Text(
                                 '${_currentIndex + 1} / ${widget.photos.length}',
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.6),
-                                  fontSize: 11,
+                                style: AppTypography.caption.copyWith(
+                                  color: Colors.white70,
+                                  fontFeatures: AppTypography.tabularFigures,
                                 ),
                               ),
                             ],
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.info_outline, color: Colors.white),
+                          icon: const Icon(Icons.info_outline, color: Colors.white, size: 20),
                           tooltip: 'Thông tin ảnh',
                           onPressed: () => _showInfoSheet(currentPhoto),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.download_outlined, color: Colors.white),
+                          icon: const Icon(Icons.download_outlined, color: Colors.white, size: 20),
                           tooltip: 'Tải về',
                           onPressed: () {
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -309,38 +322,38 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
               ),
             ),
 
-            // Bottom Thumbnail Filmstrip (animated toggle)
+            // Bottom Thumbnail Filmstrip with scrim gradient
             Positioned(
               left: 0,
               right: 0,
               bottom: 0,
               child: AnimatedOpacity(
-                duration: const Duration(milliseconds: 200),
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOut,
                 opacity: _showChrome ? 1.0 : 0.0,
                 child: IgnorePointer(
                   ignoring: !_showChrome,
                   child: Container(
                     padding: EdgeInsets.only(
-                      bottom: MediaQuery.of(context).padding.bottom + 12,
-                      top: 12,
+                      bottom: MediaQuery.of(context).padding.bottom + AppSpacing.md,
+                      top: AppSpacing.md,
                     ),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.bottomCenter,
                         end: Alignment.topCenter,
                         colors: [
-                          Colors.black.withValues(alpha: 0.85),
+                          colors.scrim.withValues(alpha: 0.85),
                           Colors.transparent,
                         ],
                       ),
                     ),
                     child: SizedBox(
-                      height: 56,
+                      height: 52,
                       child: ListView.builder(
                         controller: _thumbScrollController,
                         scrollDirection: Axis.horizontal,
-                        physics: const BouncingScrollPhysics(),
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
                         itemCount: widget.photos.length,
                         itemBuilder: (context, index) {
                           final photo = widget.photos[index];
@@ -350,20 +363,20 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                             onTap: () {
                               _pageController.animateToPage(
                                 index,
-                                duration: const Duration(milliseconds: 250),
+                                duration: const Duration(milliseconds: 200),
                                 curve: Curves.easeOut,
                               );
                             },
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 150),
-                              width: 52,
-                              height: 52,
-                              margin: const EdgeInsets.symmetric(horizontal: 4),
+                              width: 48,
+                              height: 48,
+                              margin: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
                               decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(6),
+                                borderRadius: AppRadii.xs,
                                 border: Border.all(
                                   color: isSelected ? Colors.white : Colors.transparent,
-                                  width: isSelected ? 2 : 0,
+                                  width: isSelected ? 1.5 : 0,
                                 ),
                               ),
                               clipBehavior: Clip.antiAlias,
@@ -402,28 +415,28 @@ class _InfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 110,
+            width: 100,
             child: Text(
               label,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.5),
-                fontSize: 13,
+              style: AppTypography.body.copyWith(
+                color: colors.foregroundMuted,
               ),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
+              style: AppTypography.body.copyWith(
+                color: colors.foreground,
+                fontFeatures: AppTypography.tabularFigures,
               ),
             ),
           ),

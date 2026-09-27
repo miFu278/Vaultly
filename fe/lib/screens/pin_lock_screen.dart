@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/api_service.dart';
+import '../theme/app_tokens.dart';
 
 enum PinLockMode { unlock, setup }
 
@@ -25,8 +26,9 @@ class _PinLockScreenState extends State<PinLockScreen>
   final ApiService _api = ApiService();
   final int _pinLength = 6;
   String _enteredPin = '';
-  String? _firstEnteredPin; // for setup confirmation step
+  String? _firstEnteredPin;
   bool _isConfirming = false;
+  bool _isVerifying = false;
   String? _errorMessage;
 
   late AnimationController _shakeController;
@@ -51,6 +53,7 @@ class _PinLockScreenState extends State<PinLockScreen>
   }
 
   void _onNumberPressed(int number) {
+    if (_isVerifying) return;
     if (_enteredPin.length < _pinLength) {
       HapticFeedback.lightImpact();
       setState(() {
@@ -65,6 +68,7 @@ class _PinLockScreenState extends State<PinLockScreen>
   }
 
   void _onBackspacePressed() {
+    if (_isVerifying) return;
     if (_enteredPin.isNotEmpty) {
       HapticFeedback.selectionClick();
       setState(() {
@@ -85,7 +89,11 @@ class _PinLockScreenState extends State<PinLockScreen>
 
   Future<void> _handlePinComplete() async {
     if (widget.mode == PinLockMode.unlock) {
-      final isValid = _api.verifyAndUnlockPin(_enteredPin);
+      setState(() => _isVerifying = true);
+      final isValid = await _api.unlockWithPin(_enteredPin);
+      if (!mounted) return;
+      setState(() => _isVerifying = false);
+
       if (isValid) {
         HapticFeedback.mediumImpact();
         widget.onSuccess();
@@ -95,7 +103,6 @@ class _PinLockScreenState extends State<PinLockScreen>
     } else {
       // Setup mode
       if (!_isConfirming) {
-        // Step 1: Record first PIN and ask to confirm
         setState(() {
           _firstEnteredPin = _enteredPin;
           _enteredPin = '';
@@ -103,9 +110,21 @@ class _PinLockScreenState extends State<PinLockScreen>
           _errorMessage = null;
         });
       } else {
-        // Step 2: Verify confirmation
         if (_enteredPin == _firstEnteredPin) {
-          await _api.setPin(_enteredPin);
+          setState(() => _isVerifying = true);
+          final synced = await _api.setPin(_enteredPin);
+          if (!mounted) return;
+          setState(() => _isVerifying = false);
+
+          if (!synced && _api.isAuthenticated) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Đã lưu PIN trên thiết bị này nhưng chưa đồng bộ được lên máy chủ.',
+                ),
+              ),
+            );
+          }
           HapticFeedback.mediumImpact();
           widget.onSuccess();
         } else {
@@ -121,8 +140,7 @@ class _PinLockScreenState extends State<PinLockScreen>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final colors = AppColors.of(context);
 
     final String title;
     final String subtitle;
@@ -141,55 +159,56 @@ class _PinLockScreenState extends State<PinLockScreen>
     }
 
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
+      backgroundColor: colors.background,
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400),
+            constraints: const BoxConstraints(maxWidth: AppSpacing.formMax),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const Spacer(flex: 2),
 
-                // Shield Icon
+                // Shield Icon (Circle allowed for shield mark)
                 Container(
                   width: 64,
                   height: 64,
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                    color: colors.surfaceMuted,
                     shape: BoxShape.circle,
+                    border: Border.all(color: colors.border, width: 1),
                   ),
                   child: Icon(
-                    Icons.lock_outline_rounded,
-                    size: 32,
-                    color: theme.colorScheme.primary,
+                    Icons.shield_outlined,
+                    size: 28,
+                    color: colors.foreground,
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: AppSpacing.lg),
 
-                // Title
+                // Title (title-lg)
                 Text(
                   title,
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
+                  style: AppTypography.titleLg.copyWith(
+                    color: colors.foreground,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpacing.xs + 2),
 
-                // Subtitle
+                // Subtitle (body)
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
                   child: Text(
                     subtitle,
                     textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                    style: AppTypography.body.copyWith(
+                      color: colors.foregroundMuted,
                     ),
                   ),
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: AppSpacing.xxl),
 
-                // PIN Dots with Shake Animation
+                // PIN Dots (Circles reserved for PIN dots)
                 AnimatedBuilder(
                   animation: _shakeAnimation,
                   builder: (context, child) {
@@ -207,23 +226,21 @@ class _PinLockScreenState extends State<PinLockScreen>
                       final isFilled = index < _enteredPin.length;
                       return AnimatedContainer(
                         duration: const Duration(milliseconds: 150),
-                        margin: const EdgeInsets.symmetric(horizontal: 10),
-                        width: isFilled ? 18 : 16,
-                        height: isFilled ? 18 : 16,
+                        margin: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                        width: isFilled ? 16 : 14,
+                        height: isFilled ? 16 : 14,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: isFilled
                               ? (_errorMessage != null
-                                  ? Colors.redAccent
-                                  : theme.colorScheme.primary)
+                                  ? colors.danger
+                                  : colors.primary)
                               : Colors.transparent,
                           border: Border.all(
                             color: _errorMessage != null
-                                ? Colors.redAccent
-                                : (isFilled
-                                    ? theme.colorScheme.primary
-                                    : theme.dividerColor),
-                            width: 2,
+                                ? colors.danger
+                                : (isFilled ? colors.primary : colors.border),
+                            width: 1.5,
                           ),
                         ),
                       );
@@ -231,42 +248,51 @@ class _PinLockScreenState extends State<PinLockScreen>
                   ),
                 ),
 
-                const SizedBox(height: 16),
+                const SizedBox(height: AppSpacing.lg),
 
-                // Error Message if any
+                // Error Message / verifying indicator
                 SizedBox(
                   height: 24,
-                  child: _errorMessage != null
-                      ? Text(
-                          _errorMessage!,
-                          style: const TextStyle(
-                            color: Colors.redAccent,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
+                  child: _isVerifying
+                      ? SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: colors.foregroundMuted,
                           ),
                         )
-                      : null,
+                      : (_errorMessage != null
+                          ? Text(
+                              _errorMessage!,
+                              style: AppTypography.body.copyWith(
+                                color: colors.danger,
+                              ),
+                            )
+                          : null),
                 ),
 
                 const Spacer(flex: 1),
 
-                // Numeric Keypad
-                _buildKeypad(theme, isDark),
+                // Numeric Keypad (rounded.md, NOT circles)
+                _buildKeypad(colors),
 
                 const Spacer(flex: 1),
 
-                // Footer options: Logout / Forgot PIN
+                // Footer options: Logout
                 if (widget.onLogout != null)
                   TextButton.icon(
                     onPressed: widget.onLogout,
-                    icon: const Icon(Icons.logout, size: 16),
-                    label: const Text(
+                    icon: Icon(Icons.logout, size: 16, color: colors.foregroundMuted),
+                    label: Text(
                       'Đăng xuất tài khoản',
-                      style: TextStyle(fontSize: 13),
+                      style: AppTypography.body.copyWith(
+                        color: colors.foregroundMuted,
+                      ),
                     ),
                   ),
 
-                const SizedBox(height: 16),
+                const SizedBox(height: AppSpacing.lg),
               ],
             ),
           ),
@@ -275,50 +301,67 @@ class _PinLockScreenState extends State<PinLockScreen>
     );
   }
 
-  Widget _buildKeypad(ThemeData theme, bool isDark) {
+  Widget _buildKeypad(AppColorsData colors) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 48),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
       child: Column(
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _buildKeyButton('1', theme, isDark, () => _onNumberPressed(1)),
-              _buildKeyButton('2', theme, isDark, () => _onNumberPressed(2)),
-              _buildKeyButton('3', theme, isDark, () => _onNumberPressed(3)),
+              _buildKeyButton('1', colors, () => _onNumberPressed(1)),
+              const SizedBox(width: AppSpacing.md),
+              _buildKeyButton('2', colors, () => _onNumberPressed(2)),
+              const SizedBox(width: AppSpacing.md),
+              _buildKeyButton('3', colors, () => _onNumberPressed(3)),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.md),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _buildKeyButton('4', theme, isDark, () => _onNumberPressed(4)),
-              _buildKeyButton('5', theme, isDark, () => _onNumberPressed(5)),
-              _buildKeyButton('6', theme, isDark, () => _onNumberPressed(6)),
+              _buildKeyButton('4', colors, () => _onNumberPressed(4)),
+              const SizedBox(width: AppSpacing.md),
+              _buildKeyButton('5', colors, () => _onNumberPressed(5)),
+              const SizedBox(width: AppSpacing.md),
+              _buildKeyButton('6', colors, () => _onNumberPressed(6)),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.md),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _buildKeyButton('7', theme, isDark, () => _onNumberPressed(7)),
-              _buildKeyButton('8', theme, isDark, () => _onNumberPressed(8)),
-              _buildKeyButton('9', theme, isDark, () => _onNumberPressed(9)),
+              _buildKeyButton('7', colors, () => _onNumberPressed(7)),
+              const SizedBox(width: AppSpacing.md),
+              _buildKeyButton('8', colors, () => _onNumberPressed(8)),
+              const SizedBox(width: AppSpacing.md),
+              _buildKeyButton('9', colors, () => _onNumberPressed(9)),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.md),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const SizedBox(width: 72, height: 72), // Empty placeholder
-              _buildKeyButton('0', theme, isDark, () => _onNumberPressed(0)),
+              const SizedBox(width: 72, height: 58),
+              const SizedBox(width: AppSpacing.md),
+              _buildKeyButton('0', colors, () => _onNumberPressed(0)),
+              const SizedBox(width: AppSpacing.md),
               SizedBox(
                 width: 72,
-                height: 72,
-                child: IconButton(
+                height: 58,
+                child: OutlinedButton(
                   onPressed: _onBackspacePressed,
-                  icon: const Icon(Icons.backspace_outlined, size: 24),
-                  tooltip: 'Xóa số',
+                  style: OutlinedButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    shape: const RoundedRectangleBorder(borderRadius: AppRadii.md),
+                    side: BorderSide(color: colors.border, width: 1),
+                    backgroundColor: colors.surfaceMuted,
+                  ),
+                  child: Icon(
+                    Icons.backspace_outlined,
+                    size: 20,
+                    color: colors.foreground,
+                  ),
                 ),
               ),
             ],
@@ -330,37 +373,28 @@ class _PinLockScreenState extends State<PinLockScreen>
 
   Widget _buildKeyButton(
     String label,
-    ThemeData theme,
-    bool isDark,
+    AppColorsData colors,
     VoidCallback onTap,
   ) {
-    return Container(
+    return SizedBox(
       width: 72,
-      height: 72,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: isDark
-            ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5)
-            : theme.colorScheme.surfaceContainerLowest,
-        border: Border.all(
-          color: theme.dividerColor.withValues(alpha: 0.3),
-          width: 1,
+      height: 58,
+      child: OutlinedButton(
+        onPressed: onTap,
+        style: OutlinedButton.styleFrom(
+          padding: EdgeInsets.zero,
+          shape: const RoundedRectangleBorder(borderRadius: AppRadii.md),
+          side: BorderSide(color: colors.border, width: 1),
+          backgroundColor: colors.surfaceMuted,
+          foregroundColor: colors.foreground,
         ),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(36),
-          onTap: onTap,
-          child: Center(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.w500,
-                color: theme.colorScheme.onSurface,
-              ),
-            ),
+        child: Text(
+          label,
+          style: AppTypography.title.copyWith(
+            fontSize: 22,
+            fontWeight: FontWeight.w500,
+            fontFeatures: AppTypography.tabularFigures,
+            color: colors.foreground,
           ),
         ),
       ),

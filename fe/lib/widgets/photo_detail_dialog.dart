@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/photo_item.dart';
+import '../theme/app_tokens.dart';
 
 class PhotoDetailDialog extends StatelessWidget {
   final PhotoItem photo;
@@ -9,60 +10,74 @@ class PhotoDetailDialog extends StatelessWidget {
   static Future<void> show(BuildContext context, PhotoItem photo) {
     return showDialog(
       context: context,
-      barrierColor: Colors.black87,
+      barrierColor: Colors.black54,
       builder: (context) => PhotoDetailDialog(photo: photo),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final colors = AppColors.of(context);
 
     return Dialog(
-      backgroundColor: isDark ? const Color(0xFF18181B) : Colors.white,
+      backgroundColor: colors.surface,
       surfaceTintColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      insetPadding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.xl,
+      ),
+      shape: RoundedRectangleBorder(
+        borderRadius: AppRadii.lg,
+        side: BorderSide(color: colors.border, width: 1),
+      ),
+      elevation: 0,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 800, maxHeight: 720),
+        constraints: const BoxConstraints(
+          maxWidth: AppSpacing.dialogMax,
+          maxHeight: 720,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Top action bar
+            // Top title row
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.lg,
+                vertical: AppSpacing.sm + 2,
+              ),
               child: Row(
                 children: [
                   Icon(
                     photo.isEncrypted ? Icons.lock_outline : Icons.photo_outlined,
                     size: 18,
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                    color: colors.foreground,
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: Text(
                       photo.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                      style: AppTypography.heading.copyWith(
+                        color: colors.foreground,
+                      ),
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close, size: 20),
+                    icon: const Icon(Icons.close_rounded, size: 20),
                     tooltip: 'Đóng',
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ],
               ),
             ),
-            const Divider(height: 1),
+            Divider(height: 1, color: colors.border),
 
             // Photo preview area
             Expanded(
               child: Container(
-                color: isDark ? const Color(0xFF101012) : const Color(0xFFF3F4F6),
+                color: colors.mediaCanvas,
                 alignment: Alignment.center,
                 child: InteractiveViewer(
                   minScale: 0.8,
@@ -72,7 +87,16 @@ class PhotoDetailDialog extends StatelessWidget {
                     fit: BoxFit.contain,
                     loadingBuilder: (context, child, loadingProgress) {
                       if (loadingProgress == null) return child;
-                      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+                      return Center(
+                        child: SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: colors.foregroundMuted,
+                          ),
+                        ),
+                      );
                     },
                     errorBuilder: (context, error, stackTrace) {
                       return Center(
@@ -81,15 +105,14 @@ class PhotoDetailDialog extends StatelessWidget {
                           children: [
                             Icon(
                               Icons.broken_image_outlined,
-                              size: 48,
-                              color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                              size: 40,
+                              color: colors.foregroundMuted,
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: AppSpacing.sm),
                             Text(
                               'Không thể tải ảnh gốc',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                              style: AppTypography.body.copyWith(
+                                color: colors.foregroundMuted,
                               ),
                             ),
                           ],
@@ -101,30 +124,33 @@ class PhotoDetailDialog extends StatelessWidget {
               ),
             ),
 
-            const Divider(height: 1),
+            Divider(height: 1, color: colors.border),
 
-            // Metadata footer
+            // Metadata footer carrying the single primary action
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.lg,
+                vertical: AppSpacing.md,
+              ),
               child: Row(
                 children: [
                   _MetadataItem(
                     icon: Icons.calendar_today_outlined,
-                    text: '${photo.createdAt.day}/${photo.createdAt.month}/${photo.createdAt.year}',
+                    text: '${photo.createdAt.day.toString().padLeft(2, '0')}/${photo.createdAt.month.toString().padLeft(2, '0')}/${photo.createdAt.year}',
                   ),
-                  const SizedBox(width: 16),
+                  const SizedBox(width: AppSpacing.lg),
                   _MetadataItem(
                     icon: Icons.data_usage_outlined,
                     text: photo.fileSize,
                   ),
-                  const SizedBox(width: 16),
+                  const SizedBox(width: AppSpacing.lg),
                   if (photo.isEncrypted)
                     const _MetadataItem(
                       icon: Icons.enhanced_encryption_outlined,
                       text: 'E2EE XChaCha20',
                     ),
                   const Spacer(),
-                  OutlinedButton.icon(
+                  FilledButton.icon(
                     onPressed: () {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
@@ -134,10 +160,13 @@ class PhotoDetailDialog extends StatelessWidget {
                       );
                     },
                     icon: const Icon(Icons.download_outlined, size: 16),
-                    label: const Text('Tải về', style: TextStyle(fontSize: 12)),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      visualDensity: VisualDensity.compact,
+                    label: const Text('Tải về'),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md,
+                        vertical: AppSpacing.sm,
+                      ),
+                      textStyle: AppTypography.label,
                     ),
                   ),
                 ],
@@ -158,13 +187,19 @@ class _MetadataItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65);
+    final colors = AppColors.of(context);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 14, color: color),
-        const SizedBox(width: 4),
-        Text(text, style: TextStyle(fontSize: 12, color: color)),
+        Icon(icon, size: 14, color: colors.foregroundMuted),
+        const SizedBox(width: AppSpacing.xs),
+        Text(
+          text,
+          style: AppTypography.label.copyWith(
+            color: colors.foregroundMuted,
+            fontFeatures: AppTypography.tabularFigures,
+          ),
+        ),
       ],
     );
   }

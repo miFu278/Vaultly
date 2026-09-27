@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../theme/app_tokens.dart';
+import '../widgets/segmented_control.dart';
 
 class AuthScreen extends StatefulWidget {
   final VoidCallback onSuccess;
@@ -10,9 +12,9 @@ class AuthScreen extends StatefulWidget {
   State<AuthScreen> createState() => _AuthScreenState();
 }
 
-class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateMixin {
+class _AuthScreenState extends State<AuthScreen> {
   final ApiService _api = ApiService();
-  late TabController _tabController;
+  int _activeTab = 0; // 0: Login, 1: Register
 
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
@@ -29,20 +31,11 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    _tabController.addListener(() {
-      if (mounted) {
-        setState(() {
-          _errorMessage = null;
-        });
-      }
-    });
     _urlController.text = _api.baseUrl;
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
@@ -50,10 +43,17 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
     super.dispose();
   }
 
+  void _onTabChanged(int index) {
+    setState(() {
+      _activeTab = index;
+      _errorMessage = null;
+    });
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final isRegister = _tabController.index == 1;
+    final isRegister = _activeTab == 1;
     final email = _emailController.text.trim();
     final password = _passwordController.text;
 
@@ -97,113 +97,102 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final colors = AppColors.of(context);
 
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
+      backgroundColor: colors.background,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.xl,
+              vertical: AppSpacing.xxl,
+            ),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 440),
+              constraints: const BoxConstraints(maxWidth: AppSpacing.formMax),
               child: Form(
                 key: _formKey,
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Brand Icon & Title
+                    // Brand Icon ({rounded.xl} hero icon tile)
                     Center(
                       child: Container(
-                        width: 64,
-                        height: 64,
+                        width: 60,
+                        height: 60,
                         decoration: BoxDecoration(
-                          color: theme.colorScheme.primaryContainer,
-                          borderRadius: BorderRadius.circular(16),
+                          color: colors.surfaceMuted,
+                          borderRadius: AppRadii.xl,
+                          border: Border.all(color: colors.border, width: 1),
                         ),
                         child: Icon(
-                          Icons.lock_rounded,
-                          size: 32,
-                          color: theme.colorScheme.primary,
+                          Icons.lock_outline_rounded,
+                          size: 28,
+                          color: colors.foreground,
                         ),
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: AppSpacing.lg),
+
+                    // Auth Hero Title (title-lg: 26px, w700, -0.5px)
                     Text(
                       'Vaultly Secure Vault',
                       textAlign: TextAlign.center,
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: -0.5,
+                      style: AppTypography.titleLg.copyWith(
+                        color: colors.foreground,
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: AppSpacing.xs),
                     Text(
                       'Bảo mật ảnh cá nhân chuẩn E2EE',
                       textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                      style: AppTypography.body.copyWith(
+                        color: colors.foregroundMuted,
                       ),
                     ),
-                    const SizedBox(height: 28),
+                    const SizedBox(height: AppSpacing.xl),
 
-                    // Tabs: Đăng nhập & Đăng ký
-                    Container(
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      padding: const EdgeInsets.all(4),
-                      child: TabBar(
-                        controller: _tabController,
-                        indicator: BoxDecoration(
-                          color: theme.cardColor,
-                          borderRadius: BorderRadius.circular(8),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.05),
-                              blurRadius: 4,
-                              offset: const Offset(0, 1),
-                            ),
-                          ],
-                        ),
-                        labelColor: theme.colorScheme.primary,
-                        unselectedLabelColor: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                        labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                        dividerColor: Colors.transparent,
-                        indicatorSize: TabBarIndicatorSize.tab,
-                        tabs: const [
-                          Tab(text: 'Đăng nhập'),
-                          Tab(text: 'Đăng ký mới'),
-                        ],
-                      ),
+                    // Segmented Control for Auth Tabs (DESIGN.md)
+                    VaultlySegmentedControl<int>(
+                      selectedValue: _activeTab,
+                      expand: true,
+                      segments: const [
+                        VaultlySegment(value: 0, label: 'Đăng nhập'),
+                        VaultlySegment(value: 1, label: 'Đăng ký mới'),
+                      ],
+                      onValueChanged: _onTabChanged,
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: AppSpacing.xl),
 
-                    // Error Banner if any
+                    // Error Banner in danger color if any
                     if (_errorMessage != null) ...[
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.md,
+                          vertical: AppSpacing.sm + 2,
+                        ),
                         decoration: BoxDecoration(
-                          color: Colors.redAccent.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+                          color: colors.surfaceMuted,
+                          borderRadius: AppRadii.sm,
+                          border: Border.all(color: colors.danger, width: 1),
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.error_outline, size: 18, color: Colors.redAccent),
-                            const SizedBox(width: 8),
+                            Icon(Icons.error_outline, size: 16, color: colors.danger),
+                            const SizedBox(width: AppSpacing.sm),
                             Expanded(
                               child: Text(
                                 _errorMessage!,
-                                style: const TextStyle(color: Colors.redAccent, fontSize: 13),
+                                style: AppTypography.body.copyWith(
+                                  color: colors.danger,
+                                ),
                               ),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: AppSpacing.lg),
                     ],
 
                     // Email Field
@@ -211,11 +200,10 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
                       controller: _emailController,
                       keyboardType: TextInputType.emailAddress,
                       textInputAction: TextInputAction.next,
-                      decoration: InputDecoration(
+                      style: AppTypography.body.copyWith(color: colors.foreground),
+                      decoration: const InputDecoration(
                         labelText: 'Email',
-                        prefixIcon: const Icon(Icons.email_outlined, size: 20),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        prefixIcon: Icon(Icons.email_outlined, size: 18),
                       ),
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
@@ -227,36 +215,38 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
                         return null;
                       },
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: AppSpacing.md),
 
                     // Password Field
                     TextFormField(
                       controller: _passwordController,
                       obscureText: _obscurePassword,
-                      textInputAction: _tabController.index == 1
+                      textInputAction: _activeTab == 1
                           ? TextInputAction.next
                           : TextInputAction.done,
+                      style: AppTypography.body.copyWith(color: colors.foreground),
                       onFieldSubmitted: (_) {
-                        if (_tabController.index == 0) _submit();
+                        if (_activeTab == 0) _submit();
                       },
                       decoration: InputDecoration(
                         labelText: 'Mật khẩu',
-                        prefixIcon: const Icon(Icons.lock_outline, size: 20),
+                        prefixIcon: const Icon(Icons.lock_outline, size: 18),
                         suffixIcon: IconButton(
                           icon: Icon(
-                            _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                            size: 20,
+                            _obscurePassword
+                                ? Icons.visibility_outlined
+                                : Icons.visibility_off_outlined,
+                            size: 18,
                           ),
-                          onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                          onPressed: () =>
+                              setState(() => _obscurePassword = !_obscurePassword),
                         ),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                       ),
                       validator: (value) {
                         if (value == null || value.isEmpty) {
                           return 'Vui lòng nhập mật khẩu';
                         }
-                        if (_tabController.index == 1 && value.length < 8) {
+                        if (_activeTab == 1 && value.length < 8) {
                           return 'Mật khẩu cần tối thiểu 8 ký tự';
                         }
                         return null;
@@ -264,120 +254,105 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
                     ),
 
                     // Confirm Password Field (Only on Register tab)
-                    AnimatedBuilder(
-                      animation: _tabController,
-                      builder: (context, child) {
-                        if (_tabController.index == 0) return const SizedBox.shrink();
-                        return Column(
-                          children: [
-                            const SizedBox(height: 14),
-                            TextFormField(
-                              controller: _confirmPasswordController,
-                              obscureText: _obscureConfirmPassword,
-                              textInputAction: TextInputAction.done,
-                              onFieldSubmitted: (_) => _submit(),
-                              decoration: InputDecoration(
-                                labelText: 'Xác nhận mật khẩu',
-                                prefixIcon: const Icon(Icons.lock_reset_outlined, size: 20),
-                                suffixIcon: IconButton(
-                                  icon: Icon(
-                                    _obscureConfirmPassword
-                                        ? Icons.visibility_outlined
-                                        : Icons.visibility_off_outlined,
-                                    size: 20,
-                                  ),
-                                  onPressed: () => setState(
-                                      () => _obscureConfirmPassword = !_obscureConfirmPassword),
-                                ),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                                contentPadding:
-                                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                              ),
-                              validator: (value) {
-                                if (_tabController.index == 1) {
-                                  if (value == null || value.isEmpty) {
-                                    return 'Vui lòng xác nhận mật khẩu';
-                                  }
-                                  if (value != _passwordController.text) {
-                                    return 'Mật khẩu xác nhận không khớp';
-                                  }
-                                }
-                                return null;
-                              },
+                    if (_activeTab == 1) ...[
+                      const SizedBox(height: AppSpacing.md),
+                      TextFormField(
+                        controller: _confirmPasswordController,
+                        obscureText: _obscureConfirmPassword,
+                        textInputAction: TextInputAction.done,
+                        style: AppTypography.body.copyWith(color: colors.foreground),
+                        onFieldSubmitted: (_) => _submit(),
+                        decoration: InputDecoration(
+                          labelText: 'Xác nhận mật khẩu',
+                          prefixIcon: const Icon(Icons.lock_reset_outlined, size: 18),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _obscureConfirmPassword
+                                  ? Icons.visibility_outlined
+                                  : Icons.visibility_off_outlined,
+                              size: 18,
                             ),
-                          ],
-                        );
-                      },
-                    ),
+                            onPressed: () => setState(() =>
+                                _obscureConfirmPassword = !_obscureConfirmPassword),
+                          ),
+                        ),
+                        validator: (value) {
+                          if (_activeTab == 1) {
+                            if (value == null || value.isEmpty) {
+                              return 'Vui lòng xác nhận mật khẩu';
+                            }
+                            if (value != _passwordController.text) {
+                              return 'Mật khẩu xác nhận không khớp';
+                            }
+                          }
+                          return null;
+                        },
+                      ),
+                    ],
 
-                    const SizedBox(height: 20),
+                    const SizedBox(height: AppSpacing.xl),
 
-                    // Primary Action Button
+                    // Primary Action Button ({colors.primary} filled, single primary action)
                     SizedBox(
-                      height: 48,
+                      height: 44,
                       child: FilledButton(
                         onPressed: _isLoading ? null : _submit,
-                        style: FilledButton.styleFrom(
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
                         child: _isLoading
-                            ? const SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                              )
-                            : AnimatedBuilder(
-                                animation: _tabController,
-                                builder: (context, _) => Text(
-                                  _tabController.index == 0 ? 'Đăng nhập' : 'Tạo tài khoản',
-                                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                            ? SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: colors.surface,
                                 ),
+                              )
+                            : Text(
+                                _activeTab == 0 ? 'Đăng nhập' : 'Tạo tài khoản',
                               ),
                       ),
                     ),
 
-                    const SizedBox(height: 12),
+                    const SizedBox(height: AppSpacing.sm + 2),
 
-                    // 1-Click Demo Account Login
+                    // 1-Click Demo Account Login (OutlinedButton secondary)
                     OutlinedButton.icon(
                       onPressed: _isLoading ? null : _fillDemoAccount,
-                      icon: const Icon(Icons.bolt_rounded, size: 18),
+                      icon: const Icon(Icons.bolt_outlined, size: 16),
                       label: const Text('Dùng thử tài khoản Demo'),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
                     ),
 
-                    const SizedBox(height: 16),
+                    const SizedBox(height: AppSpacing.lg),
 
                     // Collapsible Backend URL Setting
                     Center(
                       child: TextButton.icon(
-                        onPressed: () => setState(() => _showUrlConfig = !_showUrlConfig),
+                        onPressed: () =>
+                            setState(() => _showUrlConfig = !_showUrlConfig),
                         icon: Icon(
-                          _showUrlConfig ? Icons.keyboard_arrow_up : Icons.settings_outlined,
-                          size: 16,
+                          _showUrlConfig
+                              ? Icons.keyboard_arrow_up
+                              : Icons.settings_outlined,
+                          size: 14,
                         ),
                         label: Text(
-                          _showUrlConfig ? 'Ẩn cấu hình máy chủ' : 'Tùy chỉnh API Server',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                          _showUrlConfig
+                              ? 'Ẩn cấu hình máy chủ'
+                              : 'Tùy chỉnh API Server',
+                          style: AppTypography.label.copyWith(
+                            color: colors.foregroundMuted,
                           ),
                         ),
                       ),
                     ),
 
                     if (_showUrlConfig) ...[
-                      const SizedBox(height: 8),
+                      const SizedBox(height: AppSpacing.sm),
                       TextFormField(
                         controller: _urlController,
-                        decoration: InputDecoration(
+                        style: AppTypography.label.copyWith(color: colors.foreground),
+                        decoration: const InputDecoration(
                           labelText: 'API Base URL',
                           hintText: 'https://vaultly-ghqy.onrender.com',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         ),
                       ),
                     ],

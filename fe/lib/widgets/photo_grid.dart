@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../models/folder.dart';
 import '../models/photo_item.dart';
+import '../theme/app_tokens.dart';
 import 'photo_grid_item.dart';
+import 'segmented_control.dart';
 
 class PhotoGrid extends StatefulWidget {
   final Folder folder;
@@ -51,168 +53,112 @@ class _PhotoGridState extends State<PhotoGrid> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final colors = AppColors.of(context);
 
     return Column(
       children: [
-        // Sub-header bar: Folder Info & Zoom Controls
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final isCompact = constraints.maxWidth < 520;
-
-            return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: BoxDecoration(
-                color: theme.scaffoldBackgroundColor,
-                border: Border(
-                  bottom: BorderSide(color: theme.dividerColor, width: 1),
+        // Sub-header bar: Folder info & Segmented density control
+        Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.lg,
+            vertical: AppSpacing.sm + 2,
+          ),
+          decoration: BoxDecoration(
+            color: colors.surface,
+            border: Border(
+              bottom: BorderSide(color: colors.border, width: 1),
+            ),
+          ),
+          child: Row(
+            children: [
+              // Folder icon and title
+              Icon(
+                widget.folder.icon,
+                size: 18,
+                color: colors.foreground,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        widget.folder.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.heading.copyWith(
+                          color: colors.foreground,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.xs + 2),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.xs + 2,
+                        vertical: AppSpacing.xxs,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colors.surfaceMuted,
+                        borderRadius: AppRadii.xs,
+                        border: Border.all(color: colors.border, width: 1),
+                      ),
+                      child: Text(
+                        '${widget.photos.length}',
+                        style: AppTypography.caption.copyWith(
+                          color: colors.foregroundMuted,
+                          fontFeatures: AppTypography.tabularFigures,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              child: Row(
-                children: [
-                  // Folder icon and title
-                  Icon(
-                    widget.folder.icon,
-                    size: 19,
-                    color: theme.colorScheme.primary,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            widget.folder.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: -0.2,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.surfaceContainerHighest,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            '${widget.photos.length}',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                              color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                      ],
-                    ),
-                  ),
 
-                  // Zoom Controls: 2x, 3x, 4x buttons
-                  Container(
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: theme.dividerColor, width: 0.8),
-                    ),
-                    padding: const EdgeInsets.all(2),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [2, 3, 4].map((count) {
-                        final isSelected = widget.crossAxisCount == count;
-                        return InkWell(
-                          onTap: () => widget.onZoomChanged(count),
-                          borderRadius: BorderRadius.circular(6),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 150),
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? (isDark ? Colors.white : Colors.black)
-                                  : Colors.transparent,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              '${count}x',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                                color: isSelected
-                                    ? (isDark ? Colors.black : Colors.white)
-                                    : theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                              ),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-
-                  // Extra controls only on wider screen
-                  if (!isCompact) ...[
-                    const SizedBox(width: 10),
-                    // Mini Slider for zoom control
-                    SizedBox(
-                      width: 80,
-                      child: SliderTheme(
-                        data: SliderTheme.of(context).copyWith(
-                          trackHeight: 2,
-                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
-                          overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
-                          activeTrackColor: theme.colorScheme.primary,
-                          inactiveTrackColor: theme.dividerColor,
-                          thumbColor: theme.colorScheme.primary,
-                        ),
-                        child: Slider(
-                          value: widget.crossAxisCount.toDouble(),
-                          min: 2,
-                          max: 4,
-                          divisions: 2,
-                          onChanged: (val) => widget.onZoomChanged(val.round()),
-                        ),
-                      ),
-                    ),
-
-                    if (widget.onUploadMockPhoto != null) ...[
-                      const SizedBox(width: 8),
-                      FilledButton.tonalIcon(
-                        onPressed: widget.onUploadMockPhoto,
-                        icon: const Icon(Icons.add_photo_alternate_outlined, size: 15),
-                        label: const Text('Thêm ảnh', style: TextStyle(fontSize: 12)),
-                        style: FilledButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          visualDensity: VisualDensity.compact,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                      ),
-                    ],
-                  ],
+              // Segmented Density Control: 2x, 3x, 4x (DESIGN.md)
+              VaultlySegmentedControl<int>(
+                selectedValue: widget.crossAxisCount,
+                segments: const [
+                  VaultlySegment(value: 2, label: '2x'),
+                  VaultlySegment(value: 3, label: '3x'),
+                  VaultlySegment(value: 4, label: '4x'),
                 ],
+                onValueChanged: widget.onZoomChanged,
               ),
-            );
-          },
+
+              if (widget.onUploadMockPhoto != null) ...[
+                const SizedBox(width: AppSpacing.sm),
+                OutlinedButton.icon(
+                  onPressed: widget.onUploadMockPhoto,
+                  icon: const Icon(Icons.add_photo_alternate_outlined, size: 14),
+                  label: const Text('Thêm ảnh'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.sm + 2,
+                      vertical: AppSpacing.xs + 2,
+                    ),
+                    visualDensity: VisualDensity.compact,
+                    textStyle: AppTypography.label,
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
 
         // Main Grid Area with Pinch-to-zoom detector
         Expanded(
           child: widget.photos.isEmpty
-              ? _buildEmptyState(context)
+              ? _buildEmptyState(context, colors)
               : GestureDetector(
                   onScaleStart: _handleScaleStart,
                   onScaleUpdate: _handleScaleUpdate,
                   child: GridView.builder(
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(AppSpacing.md),
                     itemCount: widget.photos.length,
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: widget.crossAxisCount,
-                      mainAxisSpacing: 8,
-                      crossAxisSpacing: 8,
+                      mainAxisSpacing: AppSpacing.sm,
+                      crossAxisSpacing: AppSpacing.sm,
                       childAspectRatio: 1.0,
                     ),
                     itemBuilder: (context, index) {
@@ -231,43 +177,45 @@ class _PhotoGridState extends State<PhotoGrid> {
     );
   }
 
-  Widget _buildEmptyState(BuildContext context) {
-    final theme = Theme.of(context);
+  Widget _buildEmptyState(BuildContext context, AppColorsData colors) {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.folder_open_outlined,
-            size: 56,
-            color: theme.colorScheme.onSurface.withValues(alpha: 0.25),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Thư mục trống',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.8),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.xl),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.photo_library_outlined,
+              size: 48,
+              color: colors.foregroundMuted.withValues(alpha: 0.5),
             ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Chưa có ảnh nào được lưu trữ trong thư mục này',
-            style: TextStyle(
-              fontSize: 12,
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              'Thư mục trống',
+              style: AppTypography.title.copyWith(color: colors.foreground),
             ),
-          ),
-          if (widget.onUploadMockPhoto != null) ...[
-            const SizedBox(height: 16),
-            OutlinedButton.icon(
-              onPressed: widget.onUploadMockPhoto,
-              icon: const Icon(Icons.add, size: 16),
-              label: const Text('Thêm ảnh mẫu'),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Chưa có ảnh nào được lưu trữ trong thư mục này',
+              style: AppTypography.body.copyWith(color: colors.foregroundMuted),
+              textAlign: TextAlign.center,
             ),
+            if (widget.onUploadMockPhoto != null) ...[
+              const SizedBox(height: AppSpacing.lg),
+              OutlinedButton.icon(
+                onPressed: widget.onUploadMockPhoto,
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Thêm ảnh vào Vault'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.lg,
+                    vertical: AppSpacing.sm + 2,
+                  ),
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

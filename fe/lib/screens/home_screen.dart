@@ -4,6 +4,7 @@ import '../data/mock_data.dart';
 import '../models/folder.dart';
 import '../models/photo_item.dart';
 import '../services/api_service.dart';
+import '../theme/app_tokens.dart';
 import '../widgets/folder_sidebar.dart';
 import '../widgets/photo_grid.dart';
 import 'auth_screen.dart';
@@ -25,8 +26,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
-  static const double kMobileBreakpoint = 680.0;
-
   final ApiService _api = ApiService();
   bool _isApiConnected = false;
   bool _isLoadingApi = false;
@@ -58,7 +57,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // Check if 15 minutes of inactivity have elapsed
       if (_api.isAuthenticated && _api.isPinLocked && !_isShowingPinModal) {
         _promptPinUnlock();
       }
@@ -75,15 +73,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       });
     }
 
-    if (_api.isAuthenticated) {
-      if (_api.isPinLocked && !_isShowingPinModal) {
-        // Enforce 6-digit PIN on app start
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _promptPinUnlock();
-        });
-      } else {
-        await _loadApiData();
+    if (!_api.isAuthenticated) return;
+
+    try {
+      await _api.fetchCurrentUser();
+    } on ApiException catch (e) {
+      if (e.isUnauthorized) {
+        await _handleSessionExpired();
+        return;
       }
+    } catch (_) {
+      // Offline fallback
+    }
+    if (!mounted) return;
+
+    if (_api.isPinLocked && !_isShowingPinModal) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _promptPinUnlock();
+      });
+    } else {
+      await _loadApiData();
     }
   }
 
@@ -130,7 +139,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           onSuccess: () {
             Navigator.pop(ctx);
             if (!_api.hasPin) {
-              // Ask to setup PIN right after login/register
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 _promptPinUnlock();
               });
@@ -153,40 +161,99 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     setState(() => _isLoadingApi = true);
     try {
+      await _api.fetchCurrentUser();
       final folders = await _api.fetchFolders();
-      final photos = await _api.fetchFiles(
-        folderId: _selectedFolderId == 'all' ? null : _selectedFolderId,
-      );
+      final allPhotos = await _api.fetchFiles();
 
-      if (mounted) {
-        setState(() {
-          _folders = [
-            Folder(
-              id: 'all',
-              name: 'Tất cả ảnh',
-              icon: Icons.photo_library_outlined,
-              photoCount: photos.length,
-              coverUrl: photos.isNotEmpty ? photos.first.thumbnailUrl : null,
-            ),
-            ...folders,
-          ];
+      if (!mounted) return;
 
-          if (photos.isNotEmpty) {
-            _photos = photos;
-          }
-        });
+      setState(() {
+        _photos = allPhotos;
+        _folders = _buildFoldersWithCounts(folders, allPhotos);
+        if (!_folders.any((f) => f.id == _selectedFolderId)) {
+          _selectedFolderId = 'all';
+        }
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      if (e.isUnauthorized) {
+        await _handleSessionExpired();
+      } else {
+        _showSnackBar(e.message);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Lỗi tải dữ liệu Supabase: $e')),
-        );
+        _showSnackBar('Lỗi tải dữ liệu: $e');
       }
     } finally {
       if (mounted) {
         setState(() => _isLoadingApi = false);
       }
     }
+  }
+
+  List<Folder> _buildFoldersWithCounts(
+    List<Folder> folders,
+    List<PhotoItem> photos,
+  ) {
+    PhotoItem? coverFor(String folderId) {
+      for (final photo in photos) {
+        if (photo.folderId == folderId) return photo;
+      }
+      return null;
+    }
+
+    int countFor(String folderId) =>
+        photos.where((p) => p.folderId == folderId).length;
+
+    return [
+      Folder(
+        id: 'all',
+        name: 'Tất cả ảnh',
+        icon: Icons.photo_library_outlined,
+        photoCount: photos.length,
+        coverUrl: photos.isNotEmpty ? photos.first.thumbnailUrl : null,
+      ),
+      for (final folder in folders)
+        folder.copyWith(
+          photoCount: countFor(folder.id),
+          coverUrl: coverFor(folder.id)?.thumbnailUrl,
+        ),
+    ];
+  }
+
+  void _refreshFolderCounts() {
+    if (!_api.isAuthenticated) return;
+    final realFolders = _folders.where((f) => f.id != 'all').toList();
+    _folders = _buildFoldersWithCounts(realFolders, _photos);
+  }
+
+  Future<void> _handleSessionExpired() async {
+    await _api.logout();
+    if (!mounted) return;
+    setState(() {
+      _folders = List.from(MockData.initialFolders);
+      _photos = List.from(MockData.allPhotos);
+      _selectedFolderId = 'all';
+      _isApiConnected = false;
+    });
+    _showSnackBar('Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.');
+  }
+
+  void _showSnackBar(String message, {bool isError = false}) {
+    if (!mounted) return;
+    final colors = AppColors.of(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: AppTypography.body.copyWith(
+            color: isError ? colors.danger : colors.surface,
+          ),
+        ),
+        backgroundColor: colors.foreground,
+      ),
+    );
   }
 
   Folder get _currentFolder {
@@ -208,9 +275,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     setState(() {
       _selectedFolderId = folder.id;
     });
-    if (_api.isAuthenticated) {
-      _loadApiData();
-    }
   }
 
   void _onZoomChanged(int newCount) {
@@ -244,10 +308,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   void _showPhotoOptions(PhotoItem photo) {
     _api.touchActivity();
+    final colors = AppColors.of(context);
+
     showModalBottomSheet(
       context: context,
+      backgroundColor: colors.surface,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: AppRadii.radiusLg),
       ),
       builder: (sheetCtx) {
         return SafeArea(
@@ -255,37 +322,54 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: const Icon(Icons.info_outline),
-                title: Text(photo.title),
-                subtitle: Text('${photo.fileSize} • E2EE Encrypted'),
+                leading: Icon(Icons.info_outline, color: colors.foreground),
+                title: Text(
+                  photo.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.heading.copyWith(color: colors.foreground),
+                ),
+                subtitle: Text(
+                  '${photo.fileSize} • E2EE Encrypted',
+                  style: AppTypography.label.copyWith(
+                    color: colors.foregroundMuted,
+                    fontFeatures: AppTypography.tabularFigures,
+                  ),
+                ),
               ),
-              const Divider(height: 1),
+              Divider(height: 1, color: colors.border),
               ListTile(
-                leading: const Icon(Icons.fullscreen),
-                title: const Text('Xem toàn màn hình'),
+                leading: Icon(Icons.fullscreen, color: colors.foreground),
+                title: Text(
+                  'Xem toàn màn hình',
+                  style: AppTypography.body.copyWith(color: colors.foreground),
+                ),
                 onTap: () {
                   Navigator.pop(sheetCtx);
                   _openPhotoViewer(photo);
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                title: const Text('Xóa khỏi Vault', style: TextStyle(color: Colors.redAccent)),
+                leading: Icon(Icons.delete_outline, color: colors.danger),
+                title: Text(
+                  'Xóa khỏi Vault',
+                  style: AppTypography.body.copyWith(color: colors.danger),
+                ),
                 onTap: () async {
                   Navigator.pop(sheetCtx);
-                  if (_api.isAuthenticated) {
-                    await _api.deleteFile(photo.id);
+                  try {
+                    if (_api.isAuthenticated) {
+                      await _api.deleteFile(photo.id);
+                    }
+                    if (!mounted) return;
+                    setState(() {
+                      _photos.removeWhere((p) => p.id == photo.id);
+                      _refreshFolderCounts();
+                    });
+                    _showSnackBar('Đã xóa ${photo.title} khỏi Vault');
+                  } catch (e) {
+                    if (mounted) _showSnackBar('Lỗi xóa ảnh: $e', isError: true);
                   }
-                  if (!mounted) return;
-                  setState(() {
-                    _photos.removeWhere((p) => p.id == photo.id);
-                  });
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Đã xóa ${photo.title} khỏi Vault'),
-                      duration: const Duration(seconds: 2),
-                    ),
-                  );
                 },
               ),
             ],
@@ -297,74 +381,122 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   void _showCreateFolderDialog() {
     _api.touchActivity();
+    final colors = AppColors.of(context);
     final textController = TextEditingController();
+
     showDialog(
       context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: const Text('Tạo thư mục mới', style: TextStyle(fontSize: 16)),
-        content: TextField(
-          controller: textController,
-          autofocus: true,
-          decoration: const InputDecoration(
-            hintText: 'Tên thư mục (ví dụ: Tài chính, Gia đình)',
-            border: OutlineInputBorder(),
-            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      builder: (dialogCtx) => Dialog(
+        backgroundColor: colors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: AppRadii.lg,
+          side: BorderSide(color: colors.border, width: 1),
+        ),
+        elevation: 0,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 400),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Title row
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.lg,
+                  vertical: AppSpacing.md,
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.create_new_folder_outlined,
+                        size: 18, color: colors.foreground),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text(
+                      'Tạo thư mục mới',
+                      style: AppTypography.heading.copyWith(color: colors.foreground),
+                    ),
+                  ],
+                ),
+              ),
+              Divider(height: 1, color: colors.border),
+
+              // Content
+              Padding(
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                child: TextField(
+                  controller: textController,
+                  autofocus: true,
+                  style: AppTypography.body.copyWith(color: colors.foreground),
+                  decoration: const InputDecoration(
+                    hintText: 'Tên thư mục (ví dụ: Tài chính, Gia đình)',
+                  ),
+                ),
+              ),
+              Divider(height: 1, color: colors.border),
+
+              // Action footer
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.lg,
+                  vertical: AppSpacing.md,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(dialogCtx),
+                      child: const Text('Hủy'),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    FilledButton(
+                      onPressed: () async {
+                        final name = textController.text.trim();
+                        if (name.isNotEmpty) {
+                          Navigator.pop(dialogCtx);
+                          if (_api.isAuthenticated) {
+                            try {
+                              final created = await _api.createFolder(name);
+                              setState(() {
+                                _folders.add(created);
+                                _selectedFolderId = created.id;
+                              });
+                              if (mounted) {
+                                _showSnackBar('Đã tạo thư mục "$name"!');
+                              }
+                            } catch (e) {
+                              if (mounted) {
+                                _showSnackBar('Lỗi tạo thư mục: $e', isError: true);
+                              }
+                            }
+                          } else {
+                            final newId =
+                                'folder_${DateTime.now().millisecondsSinceEpoch}';
+                            setState(() {
+                              _folders.add(
+                                Folder(
+                                  id: newId,
+                                  name: name,
+                                  icon: Icons.folder_outlined,
+                                  isSecure: true,
+                                  photoCount: 0,
+                                ),
+                              );
+                              _selectedFolderId = newId;
+                            });
+                          }
+                        }
+                      },
+                      child: const Text('Tạo'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx),
-            child: const Text('Hủy'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              final name = textController.text.trim();
-              if (name.isNotEmpty) {
-                Navigator.pop(dialogCtx);
-                if (_api.isAuthenticated) {
-                  try {
-                    final created = await _api.createFolder(name);
-                    setState(() {
-                      _folders.add(created);
-                      _selectedFolderId = created.id;
-                    });
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Đã tạo thư mục "$name" trên Supabase!')),
-                      );
-                    }
-                  } catch (e) {
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Lỗi tạo thư mục: $e')),
-                      );
-                    }
-                  }
-                } else {
-                  final newId = 'folder_${DateTime.now().millisecondsSinceEpoch}';
-                  setState(() {
-                    _folders.add(
-                      Folder(
-                        id: newId,
-                        name: name,
-                        icon: Icons.folder_outlined,
-                        isSecure: true,
-                        photoCount: 0,
-                      ),
-                    );
-                    _selectedFolderId = newId;
-                  });
-                }
-              }
-            },
-            child: const Text('Tạo'),
-          ),
-        ],
       ),
     );
   }
 
-  /// Pick and upload multiple photos from Gallery or Desktop file picker
   Future<void> _pickAndUploadMultiplePhotos() async {
     _api.touchActivity();
     if (!_api.isAuthenticated) {
@@ -382,12 +514,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       setState(() => _isLoadingApi = true);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Đang mã hóa & tải lên $total ảnh...'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
+        _showSnackBar('Đang mã hóa & tải lên $total ảnh...');
       }
 
       final List<UploadImageItem> uploadItems = [];
@@ -396,7 +523,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         uploadItems.add(UploadImageItem(bytes: bytes, fileName: img.name));
       }
 
-      final targetFolderId = _selectedFolderId == 'all' ? null : _selectedFolderId;
+      final targetFolderId =
+          _selectedFolderId == 'all' ? null : _selectedFolderId;
 
       final res = await _api.uploadMultipleImages(
         files: uploadItems,
@@ -410,27 +538,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       if (res['success'] == true) {
         final count = res['uploadedCount'] ?? total;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Đã mã hóa XChaCha20 và tải thành công $count/$total ảnh lên Vaultly!'),
-            backgroundColor: Colors.green,
-          ),
+        _showSnackBar(
+          'Đã mã hóa XChaCha20 và tải thành công $count/$total ảnh lên Vaultly!',
         );
         await _loadApiData();
       } else {
-        final err = (res['errors'] as List?)?.join(', ') ?? 'Lỗi không xác định';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Lỗi tải ảnh: $err'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
+        final err =
+            (res['errors'] as List?)?.join(', ') ?? 'Lỗi không xác định';
+        _showSnackBar('Lỗi tải ảnh: $err', isError: true);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Lỗi chọn ảnh: $e')),
-        );
+        _showSnackBar('Lỗi chọn ảnh: $e', isError: true);
       }
     } finally {
       if (mounted) {
@@ -439,46 +558,45 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  Widget _buildApiStatusChip(ThemeData theme) {
-    Color chipColor;
+  // Monochrome status chip as defined in DESIGN.md (no saturated chromatic hues)
+  Widget _buildApiStatusChip(AppColorsData colors) {
     String statusText;
     IconData statusIcon;
 
     if (_api.isAuthenticated) {
-      chipColor = Colors.green;
-      statusText = _api.userEmail?.split('@').first ?? 'Vault đã mở';
-      statusIcon = Icons.lock_open_rounded;
+      statusText = _api.userEmail?.split('@').first ?? 'Vault mở';
+      statusIcon = Icons.lock_open_outlined;
     } else if (_isApiConnected) {
-      chipColor = Colors.orange;
       statusText = 'Đăng nhập';
-      statusIcon = Icons.login_rounded;
+      statusIcon = Icons.login_outlined;
     } else {
-      chipColor = Colors.grey;
-      statusText = 'Chưa nối DB';
-      statusIcon = Icons.cloud_off_rounded;
+      statusText = 'Chưa kết nối';
+      statusIcon = Icons.cloud_off_outlined;
     }
 
     return InkWell(
       onTap: _api.isAuthenticated ? _lockVaultManually : _openAuthScreen,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: AppRadii.sm,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm + 2,
+          vertical: AppSpacing.xs,
+        ),
         decoration: BoxDecoration(
-          color: chipColor.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: chipColor.withValues(alpha: 0.4), width: 1),
+          color: colors.surfaceMuted,
+          borderRadius: AppRadii.sm,
+          border: Border.all(color: colors.border, width: 1),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(statusIcon, size: 12, color: chipColor),
-            const SizedBox(width: 6),
+            Icon(statusIcon, size: 13, color: colors.foreground),
+            const SizedBox(width: AppSpacing.xs + 2),
             Text(
               statusText,
-              style: TextStyle(
-                fontSize: 11,
+              style: AppTypography.caption.copyWith(
                 fontWeight: FontWeight.w600,
-                color: chipColor,
+                color: colors.foreground,
               ),
             ),
           ],
@@ -491,7 +609,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isMobile = constraints.maxWidth < kMobileBreakpoint;
+        final isMobile = constraints.maxWidth < AppSpacing.paneBreakpoint;
 
         if (isMobile) {
           return _buildMobileLayout(context);
@@ -502,10 +620,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  // Mobile layout (narrow screen / Android): Sidebar as Drawer
   Widget _buildMobileLayout(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final colors = AppColors.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       appBar: AppBar(
@@ -520,38 +637,40 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           children: [
             if (_currentFolder.coverUrl != null)
               Container(
-                width: 26,
-                height: 26,
-                margin: const EdgeInsets.only(right: 8),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(6),
+                width: 24,
+                height: 24,
+                margin: const EdgeInsets.only(right: AppSpacing.sm),
+                decoration: const BoxDecoration(
+                  borderRadius: AppRadii.xs,
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: Image.network(
                   _currentFolder.coverUrl!,
                   fit: BoxFit.cover,
                   errorBuilder: (context, error, stackTrace) =>
-                      Icon(_currentFolder.icon, size: 18),
+                      Icon(_currentFolder.icon, size: 16),
                 ),
               )
             else ...[
               Icon(
                 _currentFolder.icon,
                 size: 18,
-                color: theme.colorScheme.primary,
+                color: colors.foreground,
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: AppSpacing.sm),
             ],
             Expanded(
               child: Text(
                 _currentFolder.name,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                style: AppTypography.title.copyWith(color: colors.foreground),
               ),
             ),
           ],
         ),
         actions: [
-          _buildApiStatusChip(theme),
+          _buildApiStatusChip(colors),
           IconButton(
             icon: Icon(isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined),
             tooltip: isDark ? 'Chế độ sáng' : 'Chế độ tối',
@@ -565,7 +684,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ],
       ),
       drawer: Drawer(
-        elevation: 1,
+        elevation: 0,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
         child: SafeArea(
           child: FolderSidebar(
             folders: _folders,
@@ -599,45 +719,46 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  // Desktop / Web layout (wide screen): 2-pane with Collapsible Sidebar
   Widget _buildDesktopLayout(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final colors = AppColors.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       appBar: AppBar(
-        titleSpacing: 16,
+        titleSpacing: AppSpacing.lg,
         title: Row(
           children: [
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.sm + 2,
+                vertical: AppSpacing.xs,
+              ),
               decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: theme.dividerColor, width: 0.8),
+                color: colors.surfaceMuted,
+                borderRadius: AppRadii.xs,
+                border: Border.all(color: colors.border, width: 1),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    Icons.lock_rounded,
+                    Icons.shield_outlined,
                     size: 13,
-                    color: theme.colorScheme.primary,
+                    color: colors.foreground,
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: AppSpacing.xs + 2),
                   Text(
                     'Vaultly E2EE Storage',
-                    style: TextStyle(
-                      fontSize: 12,
+                    style: AppTypography.label.copyWith(
                       fontWeight: FontWeight.w600,
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.8),
+                      color: colors.foreground,
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 12),
-            _buildApiStatusChip(theme),
+            const SizedBox(width: AppSpacing.md),
+            _buildApiStatusChip(colors),
           ],
         ),
         actions: [
@@ -666,7 +787,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             tooltip: isDark ? 'Chuyển sang chế độ sáng' : 'Chuyển sang chế độ tối',
             onPressed: widget.onToggleTheme,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: AppSpacing.sm),
         ],
       ),
       body: Stack(
