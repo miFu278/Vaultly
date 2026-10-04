@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -264,7 +265,11 @@ func (uc *FileUseCase) UploadEncryptedImage(
 	}
 
 	fileID := uuid.New()
-	objectKey := fmt.Sprintf("%s/%s", userID.String(), fileID.String())
+	cleanName := filepath.Base(fileName)
+	if cleanName == "." || cleanName == "/" || cleanName == "" {
+		cleanName = fileID.String()
+	}
+	objectKey := fmt.Sprintf("%s/%s_%s", userID.String(), fileID.String(), cleanName)
 	headerHex := hex.EncodeToString(header)
 	keyHex := hex.EncodeToString(fileKey)
 	combinedNonce := fmt.Sprintf("%s:%s", headerHex, keyHex)
