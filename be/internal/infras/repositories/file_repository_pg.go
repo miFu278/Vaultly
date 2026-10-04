@@ -302,3 +302,56 @@ func (r *FileRepositoryPG) UpdateFolderID(ctx context.Context, id, userID uuid.U
 	}
 	return nil
 }
+
+func (r *FileRepositoryPG) CopyFile(ctx context.Context, id, userID uuid.UUID, targetFolderID *uuid.UUID) (*entity.File, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	var orig entity.File
+	query := `
+		SELECT id, user_id, folder_id, r2_object_key, r2_thumbnail_key, size, content_type, nonce, status, created_at, updated_at
+		FROM files
+		WHERE id = $1 AND user_id = $2
+	`
+	err = tx.QueryRow(ctx, query, id, userID).
+		Scan(&orig.ID, &orig.UserID, &orig.FolderID, &orig.R2ObjectKey, &orig.R2ThumbnailKey, &orig.Size, &orig.ContentType, &orig.Nonce, &orig.Status, &orig.CreatedAt, &orig.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrFileNotFound
+		}
+		return nil, err
+	}
+
+	newFileID := uuid.New()
+	now := time.Now()
+	insertQuery := `
+		INSERT INTO files (id, user_id, folder_id, r2_object_key, r2_thumbnail_key, size, content_type, nonce, status, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	`
+	_, err = tx.Exec(ctx, insertQuery, newFileID, userID, targetFolderID, orig.R2ObjectKey, orig.R2ThumbnailKey, orig.Size, orig.ContentType, orig.Nonce, orig.Status, now, now)
+	if err != nil {
+		return nil, err
+	}
+
+	copyKeysQuery := `
+		INSERT INTO file_keys (file_id, device_id, wrapped_key, created_at)
+		SELECT $1, device_id, wrapped_key, NOW()
+		FROM file_keys
+		WHERE file_id = $2
+	`
+	_, _ = tx.Exec(ctx, copyKeysQuery, newFileID, id)
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	newFile := orig
+	newFile.ID = newFileID
+	newFile.FolderID = targetFolderID
+	newFile.CreatedAt = now
+	newFile.UpdatedAt = now
+	return &newFile, nil
+}

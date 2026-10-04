@@ -6,6 +6,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"sync"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
@@ -217,6 +218,82 @@ func RegisterFileRoutes(api huma.API, fileUC *usecase.FileUseCase) {
 	})
 
 	huma.Register(api, huma.Operation{
+		OperationID: "copyFileToFolder",
+		Method:      http.MethodPost,
+		Path:        "/files/{id}/copy",
+		Summary:     "Copy file into another folder",
+		Tags:        []string{"Files"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+	}, func(ctx context.Context, input *struct {
+		ID   string     `path:"id" doc:"File UUID"`
+		Body struct {
+			FolderID *uuid.UUID `json:"folder_id" doc:"Target folder UUID"`
+		}
+	}) (*struct{ Body dto.FileDTO }, error) {
+		userID, err := GetUserID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		fileID, err := uuid.Parse(input.ID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("Invalid file ID format")
+		}
+
+		res, err := fileUC.CopyFileToFolder(ctx, userID, fileID, input.Body.FolderID)
+		if err != nil {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+
+		return &struct{ Body dto.FileDTO }{Body: *res}, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "batchDeleteFiles",
+		Method:      http.MethodPost,
+		Path:        "/files/batch-delete",
+		Summary:     "Delete multiple files in one batch",
+		Tags:        []string{"Files"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+	}, func(ctx context.Context, input *struct {
+		Body struct {
+			FileIDs []string `json:"file_ids" doc:"List of file UUIDs to delete"`
+		}
+	}) (*struct {
+		Body struct {
+			Deleted []string `json:"deleted"`
+			Errors  []string `json:"errors"`
+		}
+	}, error) {
+		userID, err := GetUserID(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		var uuids []uuid.UUID
+		for _, s := range input.Body.FileIDs {
+			if u, err := uuid.Parse(s); err == nil {
+				uuids = append(uuids, u)
+			}
+		}
+
+		deletedUUIDs, errMsgs := fileUC.BatchDeleteFiles(ctx, userID, uuids)
+		var deletedStrs []string
+		for _, u := range deletedUUIDs {
+			deletedStrs = append(deletedStrs, u.String())
+		}
+
+		resp := &struct {
+			Body struct {
+				Deleted []string `json:"deleted"`
+				Errors  []string `json:"errors"`
+			}
+		}{}
+		resp.Body.Deleted = deletedStrs
+		resp.Body.Errors = errMsgs
+		return resp, nil
+	})
+
+	huma.Register(api, huma.Operation{
 		OperationID: "getThumbnail",
 		Method:      http.MethodGet,
 		Path:        "/files/{id}/thumbnail",
@@ -328,7 +405,11 @@ func RegisterFileGinRoutes(r *gin.Engine, fileUC *usecase.FileUseCase, authMiddl
 				return
 			}
 
-			var uploaded []*dto.EncryptedImageUploadResponse
+			type uploadItem struct {
+				filename string
+				data     []byte
+			}
+			var items []uploadItem
 			var errMsgs []string
 
 			for _, fileHeader := range fileHeaders {
@@ -337,21 +418,42 @@ func RegisterFileGinRoutes(r *gin.Engine, fileUC *usecase.FileUseCase, authMiddl
 					errMsgs = append(errMsgs, fErr.Error())
 					continue
 				}
-
 				rawBytes, rErr := io.ReadAll(f)
 				_ = f.Close()
 				if rErr != nil {
 					errMsgs = append(errMsgs, rErr.Error())
 					continue
 				}
+				items = append(items, uploadItem{filename: fileHeader.Filename, data: rawBytes})
+			}
 
-				res, uErr := fileUC.UploadEncryptedImage(c.Request.Context(), userID, deviceID, fileHeader.Filename, rawBytes, targetFolderID)
-				if uErr != nil {
-					errMsgs = append(errMsgs, uErr.Error())
-					continue
+			// Process and encrypt items concurrently using goroutines
+			type uploadResult struct {
+				res *dto.EncryptedImageUploadResponse
+				err error
+			}
+			resultChan := make(chan uploadResult, len(items))
+			var wg sync.WaitGroup
+
+			for _, it := range items {
+				wg.Add(1)
+				go func(item uploadItem) {
+					defer wg.Done()
+					res, uErr := fileUC.UploadEncryptedImage(c.Request.Context(), userID, deviceID, item.filename, item.data, targetFolderID)
+					resultChan <- uploadResult{res: res, err: uErr}
+				}(it)
+			}
+
+			wg.Wait()
+			close(resultChan)
+
+			var uploaded []*dto.EncryptedImageUploadResponse
+			for r := range resultChan {
+				if r.err != nil {
+					errMsgs = append(errMsgs, r.err.Error())
+				} else if r.res != nil {
+					uploaded = append(uploaded, r.res)
 				}
-
-				uploaded = append(uploaded, res)
 			}
 
 			if len(uploaded) == 0 {

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/openziti/secretstream"
 	"golang.org/x/crypto/nacl/box"
@@ -251,9 +252,9 @@ func (s *SodiumCryptoService) UnwrapKeyForDevice(wrappedKeyHex string, recipient
 	return decrypted, nil
 }
 
-// ValidateImage verifies magic bytes for supported image formats (JPEG, PNG, WebP, GIF)
+// ValidateImage verifies magic bytes for supported image and video formats (JPEG, PNG, WebP, GIF, MP4, WebM, MOV)
 func (s *SodiumCryptoService) ValidateImage(data []byte) (string, error) {
-	if len(data) < 12 {
+	if len(data) < 4 {
 		return "", domain.ErrInvalidImage
 	}
 
@@ -278,9 +279,24 @@ func (s *SodiumCryptoService) ValidateImage(data []byte) (string, error) {
 		return "image/gif", nil
 	}
 
+	// Check MP4 / QuickTime magic bytes: ....ftyp or ....moov
+	if len(data) >= 8 && (bytes.Equal(data[4:8], []byte("ftyp")) || bytes.Equal(data[4:8], []byte("moov"))) {
+		return "video/mp4", nil
+	}
+
+	// Check WebM / MKV magic bytes: 1A 45 DF A3
+	if len(data) >= 4 && bytes.Equal(data[:4], []byte{0x1A, 0x45, 0xDF, 0xA3}) {
+		return "video/webm", nil
+	}
+
+	// Check AVI magic bytes: RIFF....AVI
+	if len(data) >= 12 && bytes.Equal(data[:4], []byte("RIFF")) && bytes.Equal(data[8:12], []byte("AVI ")) {
+		return "video/x-msvideo", nil
+	}
+
 	// Fallback to http.DetectContentType
 	detected := http.DetectContentType(data)
-	if detected == "image/jpeg" || detected == "image/png" || detected == "image/webp" || detected == "image/gif" {
+	if strings.HasPrefix(detected, "image/") || strings.HasPrefix(detected, "video/") {
 		return detected, nil
 	}
 

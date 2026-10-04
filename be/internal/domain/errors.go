@@ -17,7 +17,7 @@ var (
 	// File errors
 	ErrFileNotFound   = errors.New("file not found")
 	ErrFileNotPending = errors.New("file is not in pending status")
-	ErrInvalidImage   = errors.New("file is not a valid or supported image format (JPEG, PNG, WebP, GIF allowed)")
+	ErrInvalidImage   = errors.New("file is not a valid or supported media format (JPEG, PNG, WebP, GIF, MP4, WebM, MOV allowed)")
 	ErrFileTooLarge   = errors.New("file exceeds maximum allowed size")
 
 	// Pairing errors

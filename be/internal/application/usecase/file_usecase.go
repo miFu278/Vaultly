@@ -438,3 +438,36 @@ func (uc *FileUseCase) MoveFileToFolder(ctx context.Context, userID, fileID uuid
 	return uc.fileRepo.UpdateFolderID(ctx, fileID, userID, folderID)
 }
 
+// CopyFileToFolder creates a duplicate entry of a file in the destination folder
+func (uc *FileUseCase) CopyFileToFolder(ctx context.Context, userID, fileID uuid.UUID, folderID *uuid.UUID) (*dto.FileDTO, error) {
+	f, err := uc.fileRepo.CopyFile(ctx, fileID, userID, folderID)
+	if err != nil {
+		return nil, err
+	}
+	return &dto.FileDTO{
+		ID:             f.ID,
+		FolderID:       f.FolderID,
+		R2ObjectKey:    f.R2ObjectKey,
+		R2ThumbnailKey: f.R2ThumbnailKey,
+		Size:           f.Size,
+		ContentType:    f.ContentType,
+		Status:         f.Status,
+		CreatedAt:      f.CreatedAt,
+		UpdatedAt:      f.UpdatedAt,
+	}, nil
+}
+
+// BatchDeleteFiles deletes multiple files
+func (uc *FileUseCase) BatchDeleteFiles(ctx context.Context, userID uuid.UUID, fileIDs []uuid.UUID) ([]uuid.UUID, []string) {
+	var deleted []uuid.UUID
+	var errMsgs []string
+	for _, id := range fileIDs {
+		if err := uc.DeleteFile(ctx, userID, id); err != nil {
+			errMsgs = append(errMsgs, fmt.Sprintf("%s: %v", id.String(), err))
+		} else {
+			deleted = append(deleted, id)
+		}
+	}
+	return deleted, errMsgs
+}
+

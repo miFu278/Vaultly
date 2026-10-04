@@ -16,6 +16,7 @@ type FileRepository interface {
 	ListByFolder(ctx context.Context, userID uuid.UUID, folderID *uuid.UUID, cursor *time.Time, limit int) (files []entity.File, nextCursor *time.Time, hasMore bool, err error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status entity.FileStatus) error
 	UpdateFolderID(ctx context.Context, id, userID uuid.UUID, folderID *uuid.UUID) error
+	CopyFile(ctx context.Context, id, userID uuid.UUID, targetFolderID *uuid.UUID) (*entity.File, error)
 	Delete(ctx context.Context, id, userID uuid.UUID) (objectKey string, thumbnailKey string, err error)
 
 	SaveFileKeys(ctx context.Context, fileID uuid.UUID, keys []entity.FileKey) error

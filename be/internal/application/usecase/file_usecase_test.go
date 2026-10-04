@@ -123,6 +123,18 @@ func (m *MockFileRepo) UpdateFolderID(ctx context.Context, id, userID uuid.UUID,
 	return nil
 }
 
+func (m *MockFileRepo) CopyFile(ctx context.Context, id, userID uuid.UUID, targetFolderID *uuid.UUID) (*entity.File, error) {
+	if f, ok := m.files[id]; ok && f.UserID == userID {
+		newID := uuid.New()
+		copyFile := *f
+		copyFile.ID = newID
+		copyFile.FolderID = targetFolderID
+		m.files[newID] = &copyFile
+		return &copyFile, nil
+	}
+	return nil, nil
+}
+
 // MockDeviceRepo implements DeviceRepository in memory for unit testing
 type MockDeviceRepo struct {
 	devices map[uuid.UUID]entity.Device
