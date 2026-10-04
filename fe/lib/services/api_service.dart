@@ -436,7 +436,16 @@ class ApiService {
     final fileId = item['id'].toString();
     final fId = item['folder_id']?.toString() ?? 'all';
     final r2Key = item['r2_object_key']?.toString() ?? 'photo_$fileId.jpg';
-    final cleanTitle = r2Key.contains('/') ? r2Key.split('/').last : r2Key;
+    final rawTitle = r2Key.contains('/') ? r2Key.split('/').last : r2Key;
+    String cleanTitle = rawTitle;
+    final uuidRegex = RegExp(
+        r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}');
+    if (cleanTitle.contains('_')) {
+      final parts = cleanTitle.split('_');
+      if (uuidRegex.hasMatch(parts.first) && parts.length > 1) {
+        cleanTitle = parts.sublist(1).join('_');
+      }
+    }
     final sizeBytes = item['size'] is int ? item['size'] as int : 0;
     final createdAtStr = item['created_at']?.toString();
     final createdAt = createdAtStr != null
@@ -450,6 +459,10 @@ class ApiService {
         cleanTitle.toLowerCase().endsWith('.mov') ||
         cleanTitle.toLowerCase().endsWith('.webm') ||
         cleanTitle.toLowerCase().endsWith('.mkv') ||
+        rawTitle.toLowerCase().endsWith('.mp4') ||
+        rawTitle.toLowerCase().endsWith('.mov') ||
+        rawTitle.toLowerCase().endsWith('.webm') ||
+        rawTitle.toLowerCase().endsWith('.mkv') ||
         (item['content_type']?.toString().startsWith('video/') ?? false);
 
     return PhotoItem(

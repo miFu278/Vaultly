@@ -31,6 +31,24 @@ class PhotoItem {
         lower.endsWith('.avi');
   }
 
+  String get displayTitle {
+    final t = title.trim();
+    final uuidRegex = RegExp(
+        r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}');
+    if (t.contains('_')) {
+      final parts = t.split('_');
+      if (uuidRegex.hasMatch(parts.first) && parts.length > 1) {
+        return parts.sublist(1).join('_');
+      }
+    }
+    if (uuidRegex.hasMatch(t)) {
+      final d =
+          '${createdAt.day.toString().padLeft(2, '0')}/${createdAt.month.toString().padLeft(2, '0')}/${createdAt.year}';
+      return checkIsVideo ? 'Video $d' : 'Ảnh $d';
+    }
+    return t;
+  }
+
   PhotoItem copyWith({
     String? id,
     String? folderId,

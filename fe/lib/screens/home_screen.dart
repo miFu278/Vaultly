@@ -364,7 +364,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              photo.title,
+                              photo.displayTitle,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: AppTypography.heading
@@ -421,7 +421,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       _photos.removeWhere((p) => p.id == photo.id);
                       _refreshFolderCounts();
                     });
-                    _showSnackBar('Đã xóa ${photo.title} khỏi Vault');
+                    _showSnackBar('Đã xóa ${photo.displayTitle} khỏi Vault');
                   } catch (e) {
                     if (mounted) _showSnackBar('Lỗi xóa tệp: $e', isError: true);
                   }

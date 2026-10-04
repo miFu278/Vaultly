@@ -160,7 +160,7 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                   const SizedBox(height: AppSpacing.md),
                   Divider(height: 1, color: colors.border),
                   const SizedBox(height: AppSpacing.sm),
-                  _InfoRow(label: 'Tên tệp', value: photo.title),
+                  _InfoRow(label: 'Tên tệp', value: photo.displayTitle),
                   _InfoRow(
                     label: 'Loại tệp',
                     value: photo.checkIsVideo ? 'Video' : 'Ảnh',
@@ -325,7 +325,7 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                currentPhoto.title,
+                                currentPhoto.displayTitle,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: AppTypography.heading.copyWith(
@@ -353,7 +353,7 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                           onPressed: () {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text('Đang tải: ${currentPhoto.title}'),
+                                content: Text('Đang tải: ${currentPhoto.displayTitle}'),
                                 duration: const Duration(seconds: 2),
                               ),
                             );
