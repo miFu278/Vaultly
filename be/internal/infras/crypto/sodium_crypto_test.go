@@ -186,6 +186,26 @@ func TestSodiumCryptoService_ValidateImage(t *testing.T) {
 		t.Fatalf("Expected image/webp, got %s", mime)
 	}
 
+	// MP4 / QuickTime magic bytes: ....ftyp
+	mp4Data := append([]byte{0x00, 0x00, 0x00, 0x18, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm'}, bytes.Repeat([]byte{0}, 50)...)
+	mime, err = cryptoSvc.ValidateImage(mp4Data)
+	if err != nil {
+		t.Fatalf("ValidateImage failed for MP4: %v", err)
+	}
+	if mime != "video/mp4" {
+		t.Fatalf("Expected video/mp4, got %s", mime)
+	}
+
+	// WebM / Matroska magic bytes: 1A 45 DF A3
+	webmData := append([]byte{0x1A, 0x45, 0xDF, 0xA3}, bytes.Repeat([]byte{0}, 50)...)
+	mime, err = cryptoSvc.ValidateImage(webmData)
+	if err != nil {
+		t.Fatalf("ValidateImage failed for WebM: %v", err)
+	}
+	if mime != "video/webm" {
+		t.Fatalf("Expected video/webm, got %s", mime)
+	}
+
 	// Invalid data
 	invalidData := []byte("plain text not an image")
 	_, err = cryptoSvc.ValidateImage(invalidData)

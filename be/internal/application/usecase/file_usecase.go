@@ -331,7 +331,7 @@ func (uc *FileUseCase) UploadEncryptedImage(
 		PlainSize:   int64(len(rawImage)),
 		Nonce:       headerHex,
 		ObjectKey:   objectKey,
-		Message:     "Image successfully validated, chunk-encrypted with crypto_secretstream_xchacha20poly1305, and stored",
+		Message:     "Media successfully validated, chunk-encrypted with crypto_secretstream_xchacha20poly1305, and stored",
 	}, nil
 }
 

@@ -18,6 +18,8 @@ type RouterDependencies struct {
 	FileUseCase    *usecase.FileUseCase
 	PairingUseCase *usecase.PairingUseCase
 	TokenService   service.TokenService
+	// MaxUploadBytes caps a single upload body (0 = handler default).
+	MaxUploadBytes int64
 }
 
 func SetupRoutes(r *gin.Engine, deps RouterDependencies) huma.API {
@@ -81,7 +83,7 @@ func SetupRoutes(r *gin.Engine, deps RouterDependencies) huma.API {
 
 	// Register Gin-specific routes (multipart image upload & decrypted stream view)
 	authMW := middleware.AuthMiddleware(deps.TokenService)
-	handlers.RegisterFileGinRoutes(r, deps.FileUseCase, authMW)
+	handlers.RegisterFileGinRoutes(r, deps.FileUseCase, authMW, deps.MaxUploadBytes)
 
 	return api
 }

@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -47,8 +48,8 @@ type DeleteFileInput struct {
 
 type EncryptedUploadInput struct {
 	Body struct {
-		FileName  string `json:"file_name" example:"vault_photo.jpg"`
-		ImageBase64 string `json:"image_base64" example:"/9j/4AAQSkZJRgABAQEASABIAAD..." doc:"Base64-encoded raw image data (JPEG, PNG, WebP, GIF)"`
+		FileName    string `json:"file_name" example:"vault_photo.jpg"`
+		ImageBase64 string `json:"image_base64" example:"/9j/4AAQSkZJRgABAQEASABIAAD..." doc:"Base64-encoded raw media data (JPEG, PNG, WebP, GIF, MP4, WebM, AVI)"`
 	}
 }
 
@@ -339,7 +340,7 @@ func RegisterFileRoutes(api huma.API, fileUC *usecase.FileUseCase) {
 
 		rawBytes, err := base64.StdEncoding.DecodeString(input.Body.ImageBase64)
 		if err != nil {
-			return nil, huma.Error400BadRequest("Invalid base64 image data")
+			return nil, huma.Error400BadRequest("Invalid base64 media data")
 		}
 
 		deviceID := GetDeviceID(ctx)
@@ -352,13 +353,19 @@ func RegisterFileRoutes(api huma.API, fileUC *usecase.FileUseCase) {
 	})
 }
 
-// RegisterFileGinRoutes adds multipart upload and decrypted image streaming routes to Gin
-func RegisterFileGinRoutes(r *gin.Engine, fileUC *usecase.FileUseCase, authMiddleware gin.HandlerFunc) {
+// RegisterFileGinRoutes adds multipart upload and decrypted media streaming routes to Gin.
+// maxUploadBytes bounds a single upload body (0 falls back to defaultMaxUploadBytes).
+func RegisterFileGinRoutes(r *gin.Engine, fileUC *usecase.FileUseCase, authMiddleware gin.HandlerFunc, maxUploadBytes int64) {
 	filesGroup := r.Group("/files")
 	filesGroup.Use(authMiddleware)
 	{
-		// Multipart Form Image Upload with XChaCha20-Poly1305 Encryption (Supports multiple files & folder_id)
+		// Multipart Form Upload with XChaCha20-Poly1305 Encryption (supports multiple files & folder_id)
 		filesGroup.POST("/upload", func(c *gin.Context) {
+			// Bound the body and widen the read window BEFORE anything parses the
+			// multipart form, otherwise the whole payload is already buffered and
+			// an oversized video fails late (or not at all).
+			limit := guardUploadBody(c, maxUploadBytes)
+
 			userIDVal, exists := c.Get("user_id")
 			if !exists {
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
@@ -380,8 +387,14 @@ func RegisterFileGinRoutes(r *gin.Engine, fileUC *usecase.FileUseCase, authMiddl
 			}
 
 			// Parse multipart form
-			form, err := c.MultipartForm()
 			var fileHeaders []*multipart.FileHeader
+			form, err := c.MultipartForm()
+			if tooLarge(err) {
+				c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+					"error": fmt.Sprintf("Tệp quá lớn, giới hạn %dMB mỗi tệp", limit>>20),
+				})
+				return
+			}
 
 			if err == nil && form != nil {
 				if files, ok := form.File["files"]; ok {
@@ -401,7 +414,7 @@ func RegisterFileGinRoutes(r *gin.Engine, fileUC *usecase.FileUseCase, authMiddl
 			}
 
 			if len(fileHeaders) == 0 {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "At least one image file ('file' or 'files') is required"})
+				c.JSON(http.StatusBadRequest, gin.H{"error": "At least one media file ('file' or 'files') is required"})
 				return
 			}
 
@@ -471,7 +484,7 @@ func RegisterFileGinRoutes(r *gin.Engine, fileUC *usecase.FileUseCase, authMiddl
 			}
 		})
 
-		// Decrypt and stream image directly (for viewing in browser/app)
+		// Decrypt and stream media directly (for viewing in browser/app)
 		filesGroup.GET("/:id/view", func(c *gin.Context) {
 			userIDVal, exists := c.Get("user_id")
 			if !exists {
@@ -499,8 +512,7 @@ func RegisterFileGinRoutes(r *gin.Engine, fileUC *usecase.FileUseCase, authMiddl
 				return
 			}
 
-			c.Header("Cache-Control", "private, max-age=86400")
-			c.Data(http.StatusOK, contentType, decryptedBytes)
+			serveMediaContent(c.Writer, c.Request, decryptedBytes, contentType)
 		})
 	}
 }

@@ -163,9 +163,9 @@ Server sẽ lắng nghe tại `http://localhost:8080`.
 - `GET /files/{id}/download` — Lấy presigned GET URL ảnh full-res + wrapped key
 - `GET /files/{id}/thumbnail` — **Lấy presigned GET URL cho thumbnail hiển thị nhanh**
 - `DELETE /files/{id}` — Xóa file metadata và ciphertext khỏi storage
-- `POST /files/upload` — Upload ảnh trực tiếp (multipart/form-data), mã hóa bằng `crypto_secretstream`
-- `POST /files/encrypt-upload` — Upload ảnh Base64 JSON, mã hóa bằng `crypto_secretstream`
-- `GET /files/{id}/view` — Giải mã và stream trực tiếp ảnh về trình duyệt
+- `POST /files/upload` — Upload ảnh **và video** trực tiếp (multipart/form-data), mã hóa bằng `crypto_secretstream`; giới hạn `MAX_UPLOAD_MB` (413 nếu vượt)
+- `POST /files/encrypt-upload` — Upload media Base64 JSON, mã hóa bằng `crypto_secretstream`
+- `GET /files/{id}/view` — Giải mã và stream media về client: hỗ trợ **HTTP Range (206/416)** để video phát và tua được
 
 #### 5. Pairing (Ủy quyền thiết bị mới bằng QR Code)
 - `POST /pairing/start` — Thiết bị B tạo pairing session

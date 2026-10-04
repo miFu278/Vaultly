@@ -79,16 +79,22 @@ func main() {
 		FileUseCase:    fileUC,
 		PairingUseCase: pairingUC,
 		TokenService:   tokenService,
+		MaxUploadBytes: cfg.MaxUploadBytes(),
 	})
 
 	// 6. HTTP Server Setup with Graceful Shutdown
+	// The global read/write timeouts stay short so a slow client cannot pin a
+	// connection on ordinary requests. Large media transfers (video upload and
+	// playback) opt out of them per request in the file handlers, and uploads
+	// are bounded there by MAX_UPLOAD_MB instead.
 	serverAddr := fmt.Sprintf(":%s", cfg.Port)
 	srv := &http.Server{
-		Addr:         serverAddr,
-		Handler:      r,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Addr:              serverAddr,
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	go func() {

@@ -26,6 +26,7 @@ type Config struct {
 	R2BucketName                  string
 	R2Endpoint                    string
 	PresignedURLExpirationMinutes int
+	MaxUploadMB                   int
 }
 
 func LoadConfig() (*Config, error) {
@@ -34,6 +35,7 @@ func LoadConfig() (*Config, error) {
 
 	jwtHours, _ := strconv.Atoi(getEnv("JWT_EXPIRATION_HOURS", "720"))
 	presignedMinutes, _ := strconv.Atoi(getEnv("PRESIGNED_URL_EXPIRATION_MINUTES", "15"))
+	maxUploadMB, _ := strconv.Atoi(getEnv("MAX_UPLOAD_MB", "512"))
 
 	cfg := &Config{
 		Port:                          getEnv("PORT", "8080"),
@@ -53,9 +55,18 @@ func LoadConfig() (*Config, error) {
 		R2BucketName:                  getEnv("R2_BUCKET_NAME", "vaultly-storage"),
 		R2Endpoint:                    getEnv("R2_ENDPOINT", ""),
 		PresignedURLExpirationMinutes: presignedMinutes,
+		MaxUploadMB:                   maxUploadMB,
 	}
 
 	return cfg, nil
+}
+
+// MaxUploadBytes is the configured per-request upload cap in bytes.
+func (c *Config) MaxUploadBytes() int64 {
+	if c.MaxUploadMB <= 0 {
+		return 0 // signal the handler to use its default
+	}
+	return int64(c.MaxUploadMB) << 20
 }
 
 func (c *Config) DatabaseURL() string {
