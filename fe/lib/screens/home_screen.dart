@@ -704,6 +704,77 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _confirmDeleteFolder(Folder folder) async {
+    if (folder.id == 'all') return;
+    _api.touchActivity();
+
+    final colors = AppColors.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => NeumorphicDialog(
+        maxWidth: 380,
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Xóa thư mục "${folder.name}"?',
+                style: AppTypography.heading.copyWith(color: colors.foreground),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                folder.photoCount > 0
+                    ? '${folder.photoCount} ảnh/video trong thư mục sẽ được đưa về mục "Tất cả ảnh" chứ không bị xóa.'
+                    : 'Thư mục trống sẽ bị xóa vĩnh viễn.',
+                style: AppTypography.body.copyWith(color: colors.foregroundMuted),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  NeumorphicButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    label: 'Hủy',
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  NeumorphicButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    label: 'Xóa',
+                    danger: true,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      if (_api.isAuthenticated) {
+        await _api.deleteFolder(folder.id);
+      }
+      setState(() {
+        _folders.removeWhere((f) => f.id == folder.id);
+        // Files stay in the vault, so they surface under "Tất cả ảnh".
+        for (var i = 0; i < _photos.length; i++) {
+          if (_photos[i].folderId == folder.id) {
+            _photos[i] = _photos[i].copyWith(folderId: 'all');
+          }
+        }
+        if (_selectedFolderId == folder.id) _selectedFolderId = 'all';
+        _refreshFolderCounts();
+      });
+      _showSnackBar('Đã xóa thư mục "${folder.name}"');
+    } catch (e) {
+      if (mounted) _showSnackBar('Lỗi xóa thư mục: $e', isError: true);
+    }
+  }
+
   void _showCreateFolderDialog() {
     _api.touchActivity();
     final colors = AppColors.of(context);
@@ -1175,6 +1246,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             onSelectFolder: _onSelectFolder,
             isDrawer: true,
             onCreateFolder: _showCreateFolderDialog,
+            onDeleteFolder: _confirmDeleteFolder,
           ),
         ),
       ),
@@ -1327,6 +1399,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 onToggleCollapse: _onToggleCollapse,
                 isDrawer: false,
                 onCreateFolder: _showCreateFolderDialog,
+                onDeleteFolder: _confirmDeleteFolder,
               ),
 
               // Right Pane: Photo Grid

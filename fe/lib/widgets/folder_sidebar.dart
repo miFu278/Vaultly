@@ -11,6 +11,7 @@ class FolderSidebar extends StatelessWidget {
   final VoidCallback? onToggleCollapse;
   final bool isDrawer;
   final VoidCallback? onCreateFolder;
+  final ValueChanged<Folder>? onDeleteFolder;
 
   const FolderSidebar({
     super.key,
@@ -21,6 +22,7 @@ class FolderSidebar extends StatelessWidget {
     this.onToggleCollapse,
     this.isDrawer = false,
     this.onCreateFolder,
+    this.onDeleteFolder,
   });
 
   bool get _compact => isCollapsed && !isDrawer;
@@ -46,11 +48,17 @@ class FolderSidebar extends StatelessWidget {
             itemCount: folders.length,
             itemBuilder: (context, index) {
               final folder = folders[index];
-              return _buildFolderItem(
-                context,
-                folder,
-                folder.id == selectedFolderId,
-                colors,
+              return _FolderTile(
+                folder: folder,
+                isSelected: folder.id == selectedFolderId,
+                compact: _compact,
+                onTap: () {
+                  onSelectFolder(folder);
+                  if (isDrawer) Navigator.of(context).pop();
+                },
+                onDelete: onDeleteFolder == null || folder.id == 'all'
+                    ? null
+                    : () => onDeleteFolder!(folder),
               );
             },
           ),
@@ -133,11 +141,58 @@ class FolderSidebar extends StatelessWidget {
     );
   }
 
-  Widget _buildFolderCoverAvatar(
-    Folder folder,
-    double size,
-    AppColorsData colors,
-  ) {
+  Widget _buildFooter(BuildContext context, AppColorsData colors) {
+    if (_compact) {
+      return SizedBox(
+        height: 60,
+        child: Center(
+          child: NeumorphicIconButton(
+            icon: Icons.create_new_folder_outlined,
+            tooltip: 'Tạo thư mục mới',
+            onPressed: onCreateFolder,
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      child: NeumorphicButton(
+        width: double.infinity,
+        icon: Icons.create_new_folder_outlined,
+        label: 'Thư mục mới',
+        onPressed: onCreateFolder,
+      ),
+    );
+  }
+}
+
+/// One folder row. Hover reveals a delete action on desktop; long-press works
+/// everywhere (touch + mouse) as the discoverable alternative.
+class _FolderTile extends StatefulWidget {
+  final Folder folder;
+  final bool isSelected;
+  final bool compact;
+  final VoidCallback onTap;
+  final VoidCallback? onDelete;
+
+  const _FolderTile({
+    required this.folder,
+    required this.isSelected,
+    required this.compact,
+    required this.onTap,
+    this.onDelete,
+  });
+
+  @override
+  State<_FolderTile> createState() => _FolderTileState();
+}
+
+class _FolderTileState extends State<_FolderTile> {
+  bool _hovered = false;
+
+  Widget _coverAvatar(double size, AppColorsData colors) {
+    final folder = widget.folder;
     return Neumorphic(
       width: size,
       height: size,
@@ -163,78 +218,89 @@ class FolderSidebar extends StatelessWidget {
     );
   }
 
-  Widget _buildFolderItem(
-    BuildContext context,
-    Folder folder,
-    bool isSelected,
-    AppColorsData colors,
-  ) {
-    final avatarSize = _compact ? 36.0 : 38.0;
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    final folder = widget.folder;
+    final isSelected = widget.isSelected;
+    final compact = widget.compact;
 
-    final itemWidget = Neumorphic(
-      margin: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
-      radius: AppRadii.rMd,
-      depth: 0.55,
-      inset: isSelected,
-      color: isSelected ? colors.surfaceMuted : colors.surface,
-      onTap: () {
-        onSelectFolder(folder);
-        if (isDrawer) Navigator.of(context).pop();
-      },
-      semanticLabel: '${folder.name}, ${folder.photoCount} ảnh',
-      padding: EdgeInsets.symmetric(
-        horizontal: _compact ? AppSpacing.xs : AppSpacing.sm + 2,
-        vertical: AppSpacing.sm,
-      ),
-      child: Row(
-        children: [
-          _buildFolderCoverAvatar(folder, avatarSize, colors),
-          if (!_compact) ...[
-            const SizedBox(width: AppSpacing.sm + 2),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    folder.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.body.copyWith(
-                      fontWeight:
-                          isSelected ? FontWeight.w600 : FontWeight.w500,
-                      color: colors.foreground,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      Text(
-                        '${folder.photoCount} ảnh',
-                        style: AppTypography.caption.copyWith(
-                          color: colors.foregroundMuted,
-                          fontFeatures: AppTypography.tabularFigures,
-                        ),
+    final showDelete =
+        widget.onDelete != null && (_hovered || isSelected);
+
+    final itemWidget = MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: Neumorphic(
+        margin: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
+        radius: AppRadii.rMd,
+        depth: 0.55,
+        inset: isSelected,
+        color: isSelected ? colors.surfaceMuted : colors.surface,
+        onTap: widget.onTap,
+        onLongPress: widget.onDelete,
+        semanticLabel: '${folder.name}, ${folder.photoCount} ảnh',
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? AppSpacing.xs : AppSpacing.sm + 2,
+          vertical: AppSpacing.sm,
+        ),
+        child: Row(
+          children: [
+            _coverAvatar(compact ? 36.0 : 38.0, colors),
+            if (!compact) ...[
+              const SizedBox(width: AppSpacing.sm + 2),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      folder.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.body.copyWith(
+                        fontWeight:
+                            isSelected ? FontWeight.w600 : FontWeight.w500,
+                        color: colors.foreground,
                       ),
-                      if (folder.isSecure) ...[
-                        const SizedBox(width: AppSpacing.xs),
-                        Icon(
-                          Icons.lock_outline,
-                          size: 10,
-                          color: colors.foregroundMuted,
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Text(
+                          '${folder.photoCount} ảnh',
+                          style: AppTypography.caption.copyWith(
+                            color: colors.foregroundMuted,
+                            fontFeatures: AppTypography.tabularFigures,
+                          ),
                         ),
+                        if (folder.isSecure) ...[
+                          const SizedBox(width: AppSpacing.xs),
+                          Icon(
+                            Icons.lock_outline,
+                            size: 10,
+                            color: colors.foregroundMuted,
+                          ),
+                        ],
                       ],
-                    ],
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
-            ),
+            ],
+            if (showDelete)
+              NeumorphicIconButton(
+                icon: Icons.delete_outline_rounded,
+                iconSize: 16,
+                tooltip: 'Xóa thư mục "${folder.name}"',
+                onPressed: widget.onDelete,
+              ),
           ],
-        ],
+        ),
       ),
     );
 
-    if (_compact) {
+    if (compact) {
       return Tooltip(
         message: '${folder.name} (${folder.photoCount})',
         waitDuration: const Duration(milliseconds: 300),
@@ -243,30 +309,5 @@ class FolderSidebar extends StatelessWidget {
     }
 
     return itemWidget;
-  }
-
-  Widget _buildFooter(BuildContext context, AppColorsData colors) {
-    if (_compact) {
-      return SizedBox(
-        height: 60,
-        child: Center(
-          child: NeumorphicIconButton(
-            icon: Icons.create_new_folder_outlined,
-            tooltip: 'Tạo thư mục mới',
-            onPressed: onCreateFolder,
-          ),
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      child: NeumorphicButton(
-        width: double.infinity,
-        icon: Icons.create_new_folder_outlined,
-        label: 'Thư mục mới',
-        onPressed: onCreateFolder,
-      ),
-    );
   }
 }

@@ -32,6 +32,10 @@ type ListFolderFilesOutput struct {
 	Body dto.PaginatedFilesResponse
 }
 
+type DeleteFolderInput struct {
+	ID string `path:"id" doc:"Folder UUID to delete"`
+}
+
 func RegisterFolderRoutes(api huma.API, folderUC *usecase.FolderUseCase, fileUC *usecase.FileUseCase) {
 	huma.Register(api, huma.Operation{
 		OperationID: "createFolder",
@@ -69,6 +73,32 @@ func RegisterFolderRoutes(api huma.API, folderUC *usecase.FolderUseCase, fileUC 
 			return nil, huma.Error500InternalServerError(err.Error())
 		}
 		return &ListFoldersOutput{Body: folders}, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "deleteFolder",
+		Method:      http.MethodDelete,
+		Path:        "/folders/{id}",
+		Summary:     "Delete a folder (files inside are moved back to the root vault)",
+		Tags:        []string{"Folders"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+	}, func(ctx context.Context, input *DeleteFolderInput) (*MessageOutput, error) {
+		userID, err := GetUserID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		folderID, err := uuid.Parse(input.ID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("Invalid folder ID format")
+		}
+
+		if err := folderUC.DeleteFolder(ctx, userID, folderID); err != nil {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+
+		resp := &MessageOutput{}
+		resp.Body.Message = "Folder deleted successfully"
+		return resp, nil
 	})
 
 	huma.Register(api, huma.Operation{

@@ -399,6 +399,26 @@ class ApiService {
     );
   }
 
+  /// Delete a folder. Files inside are kept and moved back to the root vault.
+  Future<bool> deleteFolder(String folderId) async {
+    if (!isAuthenticated) return false;
+
+    final res = await http.delete(
+      Uri.parse('$_baseUrl/folders/$folderId'),
+      headers: _authHeaders,
+    );
+    if (res.statusCode == 401) {
+      throw ApiException(401, 'Phiên đăng nhập đã hết hạn');
+    }
+    if (res.statusCode != 200) {
+      throw ApiException(
+        res.statusCode,
+        _extractError(res, 'Không xóa được thư mục'),
+      );
+    }
+    return true;
+  }
+
   /// Fetch files (photos) from database.
   ///
   /// When [folderId] is null/`all` the full set for the user is returned from
