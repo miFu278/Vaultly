@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/folder.dart';
 import '../theme/app_tokens.dart';
+import 'neumorphic.dart';
 
 class FolderSidebar extends StatelessWidget {
   final List<Folder> folders;
@@ -22,139 +23,128 @@ class FolderSidebar extends StatelessWidget {
     this.onCreateFolder,
   });
 
+  bool get _compact => isCollapsed && !isDrawer;
+
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
 
-    // Fixed width when drawer, collapsed or expanded when desktop sidebar
-    final double width = isDrawer
-        ? 280.0
-        : (isCollapsed ? AppSpacing.sidebarCollapsed : AppSpacing.sidebarExpanded);
+    final double width =
+        isDrawer ? 280.0 : (isCollapsed ? AppSpacing.sidebarCollapsed : AppSpacing.sidebarExpanded);
 
-    return Container(
-      width: width,
-      decoration: BoxDecoration(
-        color: colors.surface,
-        border: isDrawer
-            ? null
-            : Border(
-                right: BorderSide(
-                  color: colors.border,
-                  width: 1,
-                ),
-              ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Header: Brand Title & Collapse Toggle
-          _buildHeader(context, colors),
-
-          Divider(height: 1, color: colors.border),
-
-          // Folder List
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(
-                vertical: AppSpacing.sm,
-                horizontal: AppSpacing.sm,
-              ),
-              itemCount: folders.length,
-              itemBuilder: (context, index) {
-                final folder = folders[index];
-                final isSelected = folder.id == selectedFolderId;
-                return _buildFolderItem(context, folder, isSelected, colors);
-              },
+    final panel = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildHeader(context, colors),
+        Divider(height: 1, color: colors.border),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(
+              vertical: AppSpacing.sm,
+              horizontal: AppSpacing.sm,
             ),
+            itemCount: folders.length,
+            itemBuilder: (context, index) {
+              final folder = folders[index];
+              return _buildFolderItem(
+                context,
+                folder,
+                folder.id == selectedFolderId,
+                colors,
+              );
+            },
           ),
+        ),
+        Divider(height: 1, color: colors.border),
+        _buildFooter(context, colors),
+      ],
+    );
 
-          Divider(height: 1, color: colors.border),
+    // The drawer is edge-to-edge; the desktop pane is a raised panel floating on
+    // the canvas so the same base tone still reads as a separate surface.
+    if (isDrawer) {
+      return SizedBox(width: width, child: panel);
+    }
 
-          // Footer: Add Folder & Toggle Collapse
-          _buildFooter(context, colors),
-        ],
-      ),
+    return Neumorphic(
+      width: width,
+      margin: const EdgeInsets.all(AppSpacing.sm),
+      radius: AppRadii.rLg,
+      clipContent: true,
+      child: panel,
     );
   }
 
   Widget _buildHeader(BuildContext context, AppColorsData colors) {
-    if (isCollapsed && !isDrawer) {
-      return Container(
-        height: 56,
-        alignment: Alignment.center,
-        child: IconButton(
-          icon: const Icon(Icons.menu_open_rounded, size: 20),
-          tooltip: 'Mở rộng sidebar',
-          onPressed: onToggleCollapse,
+    if (_compact) {
+      return SizedBox(
+        height: 60,
+        child: Center(
+          child: NeumorphicIconButton(
+            icon: Icons.menu_open_rounded,
+            tooltip: 'Mở rộng sidebar',
+            onPressed: onToggleCollapse,
+          ),
         ),
       );
     }
 
-    return Container(
-      height: 56,
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-      child: Row(
-        children: [
-          // Shield / Vault Mark (Circle is allowed for shield mark)
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
+    return SizedBox(
+      height: 60,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+        child: Row(
+          children: [
+            // Shield mark lives in a debossed well.
+            Neumorphic(
+              width: 36,
+              height: 36,
+              inset: true,
+              radius: AppRadii.rPill,
               color: colors.surfaceMuted,
-              shape: BoxShape.circle,
-              border: Border.all(color: colors.border, width: 1),
-            ),
-            child: Icon(
-              Icons.shield_outlined,
-              size: 16,
-              color: colors.foreground,
-            ),
-          ),
-          const SizedBox(width: AppSpacing.sm + 2),
-
-          // Brand Title (700 weight only for brand mark)
-          Expanded(
-            child: Text(
-              'Vaultly',
-              style: AppTypography.brand.copyWith(
+              child: Icon(
+                Icons.shield_outlined,
+                size: 17,
                 color: colors.foreground,
               ),
             ),
-          ),
-
-          // Collapse button (Desktop only)
-          if (!isDrawer && onToggleCollapse != null)
-            IconButton(
-              icon: const Icon(Icons.menu_rounded, size: 20),
-              tooltip: 'Thu gọn sidebar',
-              onPressed: onToggleCollapse,
+            const SizedBox(width: AppSpacing.sm + 2),
+            Expanded(
+              child: Text(
+                'Vaultly',
+                style: AppTypography.brand.copyWith(color: colors.foreground),
+              ),
             ),
-
-          // Close button (Mobile Drawer only)
-          if (isDrawer)
-            IconButton(
-              icon: const Icon(Icons.close_rounded, size: 20),
-              tooltip: 'Đóng menu',
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-        ],
+            if (!isDrawer && onToggleCollapse != null)
+              NeumorphicIconButton(
+                icon: Icons.menu_rounded,
+                tooltip: 'Thu gọn sidebar',
+                onPressed: onToggleCollapse,
+              ),
+            if (isDrawer)
+              NeumorphicIconButton(
+                icon: Icons.close_rounded,
+                tooltip: 'Đóng menu',
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildFolderCoverAvatar(Folder folder, double size, AppColorsData colors) {
-    return Container(
+  Widget _buildFolderCoverAvatar(
+    Folder folder,
+    double size,
+    AppColorsData colors,
+  ) {
+    return Neumorphic(
       width: size,
       height: size,
-      decoration: BoxDecoration(
-        borderRadius: AppRadii.xs,
-        color: colors.surfaceMuted,
-        border: Border.all(
-          color: colors.border,
-          width: 1,
-        ),
-      ),
-      clipBehavior: Clip.antiAlias,
+      inset: true,
+      radius: AppRadii.rXs,
+      color: colors.surfaceMuted,
+      clipContent: true,
       child: folder.coverUrl != null
           ? Image.network(
               folder.coverUrl!,
@@ -179,80 +169,72 @@ class FolderSidebar extends StatelessWidget {
     bool isSelected,
     AppColorsData colors,
   ) {
-    final itemWidget = Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
-      child: Material(
-        color: isSelected ? colors.surfaceMuted : Colors.transparent,
-        borderRadius: AppRadii.md,
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () {
-            onSelectFolder(folder);
-            if (isDrawer) {
-              Navigator.of(context).pop();
-            }
-          },
-          borderRadius: AppRadii.md,
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: (isCollapsed && !isDrawer) ? AppSpacing.xs : AppSpacing.sm + 2,
-              vertical: (isCollapsed && !isDrawer) ? AppSpacing.sm : AppSpacing.sm,
-            ),
-            child: Row(
-              children: [
-                _buildFolderCoverAvatar(
-                  folder,
-                  (isCollapsed && !isDrawer) ? 36 : 38,
-                  colors,
-                ),
-                if (!isCollapsed || isDrawer) ...[
-                  const SizedBox(width: AppSpacing.sm + 2),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          folder.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.body.copyWith(
-                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                            color: isSelected ? colors.foreground : colors.foreground,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Row(
-                          children: [
-                            Text(
-                              '${folder.photoCount} ảnh',
-                              style: AppTypography.caption.copyWith(
-                                color: colors.foregroundMuted,
-                                fontFeatures: AppTypography.tabularFigures,
-                              ),
-                            ),
-                            if (folder.isSecure) ...[
-                              const SizedBox(width: AppSpacing.xs),
-                              Icon(
-                                Icons.lock_outline,
-                                size: 10,
-                                color: colors.foregroundMuted,
-                              ),
-                            ],
-                          ],
-                        ),
-                      ],
+    final avatarSize = _compact ? 36.0 : 38.0;
+
+    final itemWidget = Neumorphic(
+      margin: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
+      radius: AppRadii.rMd,
+      depth: 0.55,
+      inset: isSelected,
+      color: isSelected ? colors.surfaceMuted : colors.surface,
+      onTap: () {
+        onSelectFolder(folder);
+        if (isDrawer) Navigator.of(context).pop();
+      },
+      semanticLabel: '${folder.name}, ${folder.photoCount} ảnh',
+      padding: EdgeInsets.symmetric(
+        horizontal: _compact ? AppSpacing.xs : AppSpacing.sm + 2,
+        vertical: AppSpacing.sm,
+      ),
+      child: Row(
+        children: [
+          _buildFolderCoverAvatar(folder, avatarSize, colors),
+          if (!_compact) ...[
+            const SizedBox(width: AppSpacing.sm + 2),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    folder.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.body.copyWith(
+                      fontWeight:
+                          isSelected ? FontWeight.w600 : FontWeight.w500,
+                      color: colors.foreground,
                     ),
                   ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Text(
+                        '${folder.photoCount} ảnh',
+                        style: AppTypography.caption.copyWith(
+                          color: colors.foregroundMuted,
+                          fontFeatures: AppTypography.tabularFigures,
+                        ),
+                      ),
+                      if (folder.isSecure) ...[
+                        const SizedBox(width: AppSpacing.xs),
+                        Icon(
+                          Icons.lock_outline,
+                          size: 10,
+                          color: colors.foregroundMuted,
+                        ),
+                      ],
+                    ],
+                  ),
                 ],
-              ],
+              ),
             ),
-          ),
-        ),
+          ],
+        ],
       ),
     );
 
-    if (isCollapsed && !isDrawer) {
+    if (_compact) {
       return Tooltip(
         message: '${folder.name} (${folder.photoCount})',
         waitDuration: const Duration(milliseconds: 300),
@@ -264,32 +246,26 @@ class FolderSidebar extends StatelessWidget {
   }
 
   Widget _buildFooter(BuildContext context, AppColorsData colors) {
-    if (isCollapsed && !isDrawer) {
-      return Container(
-        height: 56,
-        alignment: Alignment.center,
-        child: IconButton(
-          icon: const Icon(Icons.create_new_folder_outlined, size: 20),
-          tooltip: 'Tạo thư mục mới',
-          onPressed: onCreateFolder,
+    if (_compact) {
+      return SizedBox(
+        height: 60,
+        child: Center(
+          child: NeumorphicIconButton(
+            icon: Icons.create_new_folder_outlined,
+            tooltip: 'Tạo thư mục mới',
+            onPressed: onCreateFolder,
+          ),
         ),
       );
     }
 
     return Padding(
       padding: const EdgeInsets.all(AppSpacing.md),
-      child: OutlinedButton.icon(
+      child: NeumorphicButton(
+        width: double.infinity,
+        icon: Icons.create_new_folder_outlined,
+        label: 'Thư mục mới',
         onPressed: onCreateFolder,
-        icon: const Icon(Icons.create_new_folder_outlined, size: 16),
-        label: const Text('Thư mục mới'),
-        style: OutlinedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(
-            vertical: AppSpacing.sm + 2,
-            horizontal: AppSpacing.md,
-          ),
-          alignment: Alignment.centerLeft,
-          textStyle: AppTypography.body,
-        ),
       ),
     );
   }

@@ -6,6 +6,7 @@ import '../models/photo_item.dart';
 import '../services/api_service.dart';
 import '../theme/app_tokens.dart';
 import '../widgets/folder_sidebar.dart';
+import '../widgets/neumorphic.dart';
 import '../widgets/photo_grid.dart';
 import 'auth_screen.dart';
 import 'photo_viewer_screen.dart';
@@ -30,6 +31,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _isApiConnected = false;
   bool _isLoadingApi = false;
   bool _isShowingPinModal = false;
+
+  // Background async upload state (non-blocking)
+  bool _isBackgroundUploading = false;
+  int _uploadCurrent = 0;
+  int _uploadTotal = 0;
+
+  // Multi-select state
+  bool _isSelectionMode = false;
+  Set<String> _selectedPhotoIds = {};
 
   late List<Folder> _folders;
   late List<PhotoItem> _photos;
@@ -236,6 +246,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _photos = List.from(MockData.allPhotos);
       _selectedFolderId = 'all';
       _isApiConnected = false;
+      _isSelectionMode = false;
+      _selectedPhotoIds.clear();
     });
     _showSnackBar('Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.');
   }
@@ -274,6 +286,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _api.touchActivity();
     setState(() {
       _selectedFolderId = folder.id;
+      _selectedPhotoIds.clear();
+      _isSelectionMode = false;
     });
   }
 
@@ -312,50 +326,91 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: colors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: AppRadii.radiusLg),
-      ),
+      backgroundColor: Colors.transparent,
+      elevation: 0,
       builder: (sheetCtx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: Icon(Icons.info_outline, color: colors.foreground),
-                title: Text(
-                  photo.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.heading.copyWith(color: colors.foreground),
-                ),
-                subtitle: Text(
-                  '${photo.fileSize} • E2EE Encrypted',
-                  style: AppTypography.label.copyWith(
-                    color: colors.foregroundMuted,
-                    fontFeatures: AppTypography.tabularFigures,
+        return Neumorphic(
+          depth: 1.4,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(AppRadii.rXl),
+          ),
+          clipContent: true,
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                    AppSpacing.sm,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        photo.checkIsVideo
+                            ? Icons.videocam_outlined
+                            : Icons.info_outline,
+                        size: 18,
+                        color: colors.foreground,
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              photo.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTypography.heading
+                                  .copyWith(color: colors.foreground),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${photo.fileSize} • ${photo.checkIsVideo ? 'Video E2EE' : 'E2EE Encrypted'}',
+                              style: AppTypography.label.copyWith(
+                                color: colors.foregroundMuted,
+                                fontFeatures: AppTypography.tabularFigures,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-              Divider(height: 1, color: colors.border),
-              ListTile(
-                leading: Icon(Icons.fullscreen, color: colors.foreground),
-                title: Text(
-                  'Xem toàn màn hình',
-                  style: AppTypography.body.copyWith(color: colors.foreground),
+                _sheetRow(
+                  colors,
+                  icon: Icons.fullscreen,
+                  title: 'Xem toàn màn hình',
+                  onTap: () {
+                    Navigator.pop(sheetCtx);
+                    _openPhotoViewer(photo);
+                  },
                 ),
-                onTap: () {
-                  Navigator.pop(sheetCtx);
-                  _openPhotoViewer(photo);
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.delete_outline, color: colors.danger),
-                title: Text(
-                  'Xóa khỏi Vault',
-                  style: AppTypography.body.copyWith(color: colors.danger),
+                _sheetRow(
+                  colors,
+                  icon: Icons.checklist_rounded,
+                  title: 'Chọn ảnh này',
+                  onTap: () {
+                    Navigator.pop(sheetCtx);
+                    setState(() {
+                      _isSelectionMode = true;
+                      _selectedPhotoIds.add(photo.id);
+                    });
+                  },
                 ),
-                onTap: () async {
+                _sheetRow(
+                  colors,
+                  icon: Icons.delete_outline,
+                  title: 'Xóa khỏi Vault',
+                  danger: true,
+                  onTap: () async {
                   Navigator.pop(sheetCtx);
                   try {
                     if (_api.isAuthenticated) {
@@ -368,15 +423,285 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     });
                     _showSnackBar('Đã xóa ${photo.title} khỏi Vault');
                   } catch (e) {
-                    if (mounted) _showSnackBar('Lỗi xóa ảnh: $e', isError: true);
+                    if (mounted) _showSnackBar('Lỗi xóa tệp: $e', isError: true);
                   }
                 },
-              ),
-            ],
+                ),
+                const SizedBox(height: AppSpacing.md),
+              ],
+            ),
           ),
         );
       },
     );
+  }
+
+  // --- Multi-select actions ---
+
+  void _toggleSelectionMode() {
+    setState(() {
+      _isSelectionMode = !_isSelectionMode;
+      if (!_isSelectionMode) {
+        _selectedPhotoIds.clear();
+      }
+    });
+  }
+
+  void _toggleSelectPhoto(String id) {
+    setState(() {
+      if (_selectedPhotoIds.contains(id)) {
+        _selectedPhotoIds.remove(id);
+      } else {
+        _selectedPhotoIds.add(id);
+      }
+    });
+  }
+
+  void _selectAll() {
+    setState(() {
+      _selectedPhotoIds = _displayedPhotos.map((p) => p.id).toSet();
+    });
+  }
+
+  void _deselectAll() {
+    setState(() {
+      _selectedPhotoIds.clear();
+    });
+  }
+
+  Future<void> _deleteSelectedPhotos() async {
+    final count = _selectedPhotoIds.length;
+    if (count == 0) return;
+
+    final colors = AppColors.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => NeumorphicDialog(
+        maxWidth: 380,
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Xóa $count mục đã chọn?',
+                style: AppTypography.heading.copyWith(color: colors.foreground),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'Các tệp đã chọn sẽ bị xóa vĩnh viễn khỏi Vaultly. Hành động này không thể hoàn tác.',
+                style: AppTypography.body.copyWith(color: colors.foregroundMuted),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  NeumorphicButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    label: 'Hủy',
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  NeumorphicButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    label: 'Xóa',
+                    danger: true,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final idsToDelete = _selectedPhotoIds.toList();
+    setState(() => _isLoadingApi = true);
+
+    try {
+      if (_api.isAuthenticated) {
+        await _api.batchDeleteFiles(idsToDelete);
+      }
+      setState(() {
+        _photos.removeWhere((p) => idsToDelete.contains(p.id));
+        _selectedPhotoIds.clear();
+        _isSelectionMode = false;
+        _refreshFolderCounts();
+      });
+      _showSnackBar('Đã xóa $count mục khỏi Vault');
+    } catch (e) {
+      _showSnackBar('Lỗi xóa mục: $e', isError: true);
+    } finally {
+      if (mounted) setState(() => _isLoadingApi = false);
+    }
+  }
+
+  Future<void> _addSelectedToFolder() async {
+    final count = _selectedPhotoIds.length;
+    if (count == 0) return;
+
+    final targetFolders = _folders.where((f) => f.id != 'all').toList();
+    if (targetFolders.isEmpty) {
+      _showSnackBar('Chưa có thư mục nào để chuyển vào. Hãy tạo thư mục mới trước!');
+      return;
+    }
+
+    final colors = AppColors.of(context);
+    final selectedFolder = await showDialog<Folder>(
+      context: context,
+      builder: (ctx) => NeumorphicDialog(
+        maxWidth: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: Text(
+                'Chọn thư mục đích',
+                style: AppTypography.heading.copyWith(color: colors.foreground),
+              ),
+            ),
+            Divider(height: 1, color: colors.border),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 280),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: targetFolders.length,
+                itemBuilder: (context, i) {
+                  final folder = targetFolders[i];
+                  return _sheetRow(
+                    colors,
+                    icon: folder.icon,
+                    title: folder.name,
+                    subtitle: '${folder.photoCount} tệp',
+                    onTap: () => Navigator.pop(ctx, folder),
+                  );
+                },
+              ),
+            ),
+            Divider(height: 1, color: colors.border),
+            Padding(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  NeumorphicButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    label: 'Hủy',
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (selectedFolder == null || !mounted) return;
+
+    // Check if any of the selected photos already belong to another folder
+    final bool anyAlreadyInFolder = _selectedPhotoIds.any((id) {
+      final p = _photos.cast<PhotoItem?>().firstWhere((item) => item?.id == id, orElse: () => null);
+      return p != null && p.folderId != 'all' && p.folderId.isNotEmpty && p.folderId != selectedFolder.id;
+    });
+
+    String action = 'move';
+    if (anyAlreadyInFolder) {
+      final chosenAction = await showDialog<String>(
+        context: context,
+        builder: (ctx) => NeumorphicDialog(
+          maxWidth: 420,
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Di chuyển hay Sao chép?',
+                  style: AppTypography.heading.copyWith(color: colors.foreground),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  'Một số ảnh/video bạn chọn đã nằm trong thư mục khác. Bạn muốn di chuyển hẳn sang "${selectedFolder.name}" hay tạo thêm bản sao chép vào thư mục này?',
+                  style: AppTypography.body.copyWith(color: colors.foregroundMuted),
+                ),
+                const SizedBox(height: AppSpacing.xl),
+                Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.sm,
+                  children: [
+                    NeumorphicButton(
+                      onPressed: () => Navigator.pop(ctx, null),
+                      label: 'Hủy',
+                    ),
+                    NeumorphicButton(
+                      onPressed: () => Navigator.pop(ctx, 'copy'),
+                      label: 'Sao chép',
+                    ),
+                    NeumorphicButton(
+                      onPressed: () => Navigator.pop(ctx, 'move'),
+                      label: 'Di chuyển',
+                      primary: true,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      if (chosenAction == null || !mounted) return;
+      action = chosenAction;
+    }
+
+    setState(() => _isLoadingApi = true);
+    final ids = _selectedPhotoIds.toList();
+
+    try {
+      if (action == 'move') {
+        for (final id in ids) {
+          if (_api.isAuthenticated) {
+            await _api.moveFileToFolder(id, selectedFolder.id);
+          }
+          final idx = _photos.indexWhere((p) => p.id == id);
+          if (idx != -1) {
+            _photos[idx] = _photos[idx].copyWith(folderId: selectedFolder.id);
+          }
+        }
+        _showSnackBar('Đã di chuyển $count mục vào thư mục "${selectedFolder.name}"');
+      } else {
+        // Copy action
+        for (final id in ids) {
+          if (_api.isAuthenticated) {
+            await _api.copyFileToFolder(id, selectedFolder.id);
+          }
+          final original = _photos.firstWhere((p) => p.id == id);
+          final copied = original.copyWith(
+            id: 'copy_${DateTime.now().millisecondsSinceEpoch}_${original.id}',
+            folderId: selectedFolder.id,
+            createdAt: DateTime.now(),
+          );
+          _photos.add(copied);
+        }
+        _showSnackBar('Đã sao chép $count mục vào thư mục "${selectedFolder.name}"');
+      }
+
+      setState(() {
+        _selectedPhotoIds.clear();
+        _isSelectionMode = false;
+        _refreshFolderCounts();
+      });
+    } catch (e) {
+      _showSnackBar('Lỗi xử lý thư mục: $e', isError: true);
+    } finally {
+      if (mounted) setState(() => _isLoadingApi = false);
+    }
   }
 
   void _showCreateFolderDialog() {
@@ -386,20 +711,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     showDialog(
       context: context,
-      builder: (dialogCtx) => Dialog(
-        backgroundColor: colors.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: AppRadii.lg,
-          side: BorderSide(color: colors.border, width: 1),
-        ),
-        elevation: 0,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 400),
-          child: Column(
+      builder: (dialogCtx) => NeumorphicDialog(
+        maxWidth: 400,
+        child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Title row
               Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.lg,
@@ -418,8 +735,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               ),
               Divider(height: 1, color: colors.border),
-
-              // Content
               Padding(
                 padding: const EdgeInsets.all(AppSpacing.lg),
                 child: TextField(
@@ -427,13 +742,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   autofocus: true,
                   style: AppTypography.body.copyWith(color: colors.foreground),
                   decoration: const InputDecoration(
-                    hintText: 'Tên thư mục (ví dụ: Tài chính, Gia đình)',
+                    hintText: 'Tên thư mục (ví dụ: Tài chính, Video riêng tư)',
                   ),
                 ),
               ),
               Divider(height: 1, color: colors.border),
-
-              // Action footer
               Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.lg,
@@ -442,12 +755,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    TextButton(
+                    NeumorphicButton(
                       onPressed: () => Navigator.pop(dialogCtx),
-                      child: const Text('Hủy'),
+                      label: 'Hủy',
                     ),
                     const SizedBox(width: AppSpacing.sm),
-                    FilledButton(
+                    NeumorphicButton(
+                      primary: true,
                       onPressed: () async {
                         final name = textController.text.trim();
                         if (name.isNotEmpty) {
@@ -485,7 +799,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           }
                         }
                       },
-                      child: const Text('Tạo'),
+                      label: 'Tạo',
                     ),
                   ],
                 ),
@@ -493,72 +807,239 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ],
           ),
         ),
-      ),
     );
   }
 
-  Future<void> _pickAndUploadMultiplePhotos() async {
+  // --- Background Upload (Non-blocking async) for photos & videos ---
+
+  void _showUploadMenu() {
     _api.touchActivity();
     if (!_api.isAuthenticated) {
       _openAuthScreen();
       return;
     }
 
+    final colors = AppColors.of(context);
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      builder: (sheetCtx) {
+        return Neumorphic(
+          depth: 1.4,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(AppRadii.rXl),
+          ),
+          clipContent: true,
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                    AppSpacing.sm,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.cloud_upload_outlined,
+                          size: 18, color: colors.foreground),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: Text(
+                          'Tải tệp lên Vault (Mã hóa nền E2EE)',
+                          style: AppTypography.heading
+                              .copyWith(color: colors.foreground),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                _sheetRow(
+                  colors,
+                  icon: Icons.photo_library_outlined,
+                  title: 'Chọn nhiều ảnh từ thư viện',
+                  onTap: () {
+                    Navigator.pop(sheetCtx);
+                    _pickAndUploadMedia(isPhotoOnly: true);
+                  },
+                ),
+                _sheetRow(
+                  colors,
+                  icon: Icons.videocam_outlined,
+                  title: 'Chọn video từ thư viện',
+                  onTap: () {
+                    Navigator.pop(sheetCtx);
+                    _pickAndUploadVideo();
+                  },
+                ),
+                _sheetRow(
+                  colors,
+                  icon: Icons.perm_media_outlined,
+                  title: 'Chọn ảnh & video (hỗn hợp)',
+                  onTap: () {
+                    Navigator.pop(sheetCtx);
+                    _pickAndUploadMedia(isPhotoOnly: false);
+                  },
+                ),
+                const SizedBox(height: AppSpacing.md),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _pickAndUploadVideo() async {
     try {
       final ImagePicker picker = ImagePicker();
-      final List<XFile> pickedImages = await picker.pickMultiImage();
-
-      if (pickedImages.isEmpty) return;
-
-      final total = pickedImages.length;
-      setState(() => _isLoadingApi = true);
-
-      if (mounted) {
-        _showSnackBar('Đang mã hóa & tải lên $total ảnh...');
-      }
-
-      final List<UploadImageItem> uploadItems = [];
-      for (final img in pickedImages) {
-        final bytes = await img.readAsBytes();
-        uploadItems.add(UploadImageItem(bytes: bytes, fileName: img.name));
-      }
-
-      final targetFolderId =
-          _selectedFolderId == 'all' ? null : _selectedFolderId;
-
-      final res = await _api.uploadMultipleImages(
-        files: uploadItems,
-        folderId: targetFolderId,
-        onProgress: (current, total) {
-          debugPrint('Upload progress: $current/$total');
-        },
-      );
-
-      if (!mounted) return;
-
-      if (res['success'] == true) {
-        final count = res['uploadedCount'] ?? total;
-        _showSnackBar(
-          'Đã mã hóa XChaCha20 và tải thành công $count/$total ảnh lên Vaultly!',
-        );
-        await _loadApiData();
-      } else {
-        final err =
-            (res['errors'] as List?)?.join(', ') ?? 'Lỗi không xác định';
-        _showSnackBar('Lỗi tải ảnh: $err', isError: true);
-      }
+      final XFile? video = await picker.pickVideo(source: ImageSource.gallery);
+      if (video == null) return;
+      _startBackgroundUpload([video]);
     } catch (e) {
-      if (mounted) {
-        _showSnackBar('Lỗi chọn ảnh: $e', isError: true);
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoadingApi = false);
-      }
+      _showSnackBar('Lỗi chọn video: $e', isError: true);
     }
   }
 
-  // Monochrome status chip as defined in DESIGN.md (no saturated chromatic hues)
+  Future<void> _pickAndUploadMedia({bool isPhotoOnly = true}) async {
+    try {
+      final ImagePicker picker = ImagePicker();
+      final List<XFile> pickedFiles;
+      if (isPhotoOnly) {
+        pickedFiles = await picker.pickMultiImage();
+      } else {
+        pickedFiles = await picker.pickMultipleMedia();
+      }
+      if (pickedFiles.isEmpty) return;
+      _startBackgroundUpload(pickedFiles);
+    } catch (e) {
+      _showSnackBar('Lỗi chọn tệp: $e', isError: true);
+    }
+  }
+
+  // Runs upload in the background asynchronously without locking the UI
+  void _startBackgroundUpload(List<XFile> pickedFiles) {
+    final total = pickedFiles.length;
+    setState(() {
+      _isBackgroundUploading = true;
+      _uploadCurrent = 0;
+      _uploadTotal = total;
+    });
+
+    _showSnackBar('Đang mã hóa & tải $total tệp lên nền (bạn vẫn có thể sử dụng app)...');
+
+    // Launch async background task
+    Future(() async {
+      try {
+        final List<UploadImageItem> uploadItems = [];
+        for (final file in pickedFiles) {
+          final bytes = await file.readAsBytes();
+          final lower = file.name.toLowerCase();
+          final isVid = lower.endsWith('.mp4') || lower.endsWith('.mov') || lower.endsWith('.webm') || lower.endsWith('.mkv');
+          uploadItems.add(UploadImageItem(bytes: bytes, fileName: file.name, isVideo: isVid));
+        }
+
+        final targetFolderId = _selectedFolderId == 'all' ? null : _selectedFolderId;
+
+        final res = await _api.uploadMultipleImages(
+          files: uploadItems,
+          folderId: targetFolderId,
+          onProgress: (current, total) {
+            if (mounted) {
+              setState(() {
+                _uploadCurrent = current;
+                _uploadTotal = total;
+              });
+            }
+          },
+        );
+
+        if (!mounted) return;
+
+        if (res['success'] == true) {
+          final count = res['uploadedCount'] ?? total;
+          _showSnackBar('Đã tải thành công $count/$total tệp lên Vaultly!');
+          await _loadApiData();
+        } else {
+          final err = (res['errors'] as List?)?.join(', ') ?? 'Lỗi không xác định';
+          _showSnackBar('Lỗi tải tệp: $err', isError: true);
+        }
+      } catch (e) {
+        if (mounted) _showSnackBar('Lỗi tải tệp lên nền: $e', isError: true);
+      } finally {
+        if (mounted) {
+          setState(() {
+            _isBackgroundUploading = false;
+          });
+        }
+      }
+    });
+  }
+
+  /// One row of a bottom sheet, as a raised neumorphic tile.
+  Widget _sheetRow(
+    AppColorsData colors, {
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    required VoidCallback onTap,
+    bool danger = false,
+  }) {
+    final tint = danger ? colors.danger : colors.foreground;
+    return Neumorphic(
+      margin: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.xs,
+      ),
+      radius: AppRadii.rMd,
+      depth: 0.7,
+      onTap: onTap,
+      semanticLabel: title,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.md,
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: tint),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.body.copyWith(
+                    color: tint,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: AppTypography.label.copyWith(
+                      color: colors.foregroundMuted,
+                      fontFeatures: AppTypography.tabularFigures,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildApiStatusChip(AppColorsData colors) {
     String statusText;
     IconData statusIcon;
@@ -574,33 +1055,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       statusIcon = Icons.cloud_off_outlined;
     }
 
-    return InkWell(
+    return Neumorphic(
+      radius: AppRadii.rPill,
+      depth: 0.6,
       onTap: _api.isAuthenticated ? _lockVaultManually : _openAuthScreen,
-      borderRadius: AppRadii.sm,
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.sm + 2,
-          vertical: AppSpacing.xs,
-        ),
-        decoration: BoxDecoration(
-          color: colors.surfaceMuted,
-          borderRadius: AppRadii.sm,
-          border: Border.all(color: colors.border, width: 1),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(statusIcon, size: 13, color: colors.foreground),
-            const SizedBox(width: AppSpacing.xs + 2),
-            Text(
-              statusText,
-              style: AppTypography.caption.copyWith(
-                fontWeight: FontWeight.w600,
-                color: colors.foreground,
-              ),
+      semanticLabel: statusText,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(statusIcon, size: 14, color: colors.foreground),
+          const SizedBox(width: AppSpacing.xs + 2),
+          Text(
+            statusText,
+            style: AppTypography.caption.copyWith(
+              fontWeight: FontWeight.w600,
+              color: colors.foreground,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -627,10 +1103,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return Scaffold(
       appBar: AppBar(
         leading: Builder(
-          builder: (ctx) => IconButton(
-            icon: const Icon(Icons.menu_rounded),
-            tooltip: 'Danh sách thư mục',
-            onPressed: () => Scaffold.of(ctx).openDrawer(),
+          builder: (ctx) => Center(
+            child: NeumorphicIconButton(
+              icon: Icons.menu_rounded,
+              tooltip: 'Danh sách thư mục',
+              onPressed: () => Scaffold.of(ctx).openDrawer(),
+            ),
           ),
         ),
         title: Row(
@@ -670,17 +1148,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ],
         ),
         actions: [
-          _buildApiStatusChip(colors),
-          IconButton(
-            icon: Icon(isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+            child: _buildApiStatusChip(colors),
+          ),
+          NeumorphicIconButton(
+            icon: isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
             tooltip: isDark ? 'Chế độ sáng' : 'Chế độ tối',
             onPressed: widget.onToggleTheme,
           ),
-          IconButton(
-            icon: const Icon(Icons.add_photo_alternate_outlined),
-            tooltip: 'Tải nhiều ảnh lên Vault',
-            onPressed: _pickAndUploadMultiplePhotos,
+          NeumorphicIconButton(
+            icon: Icons.add_photo_alternate_outlined,
+            tooltip: 'Tải ảnh & video lên Vault',
+            onPressed: _showUploadMenu,
           ),
+          const SizedBox(width: AppSpacing.sm),
         ],
       ),
       drawer: Drawer(
@@ -705,14 +1187,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             onZoomChanged: _onZoomChanged,
             onPhotoTap: _openPhotoViewer,
             onPhotoLongPress: _showPhotoOptions,
-            onUploadMockPhoto: _pickAndUploadMultiplePhotos,
+            onUploadMockPhoto: _showUploadMenu,
+            isSelectionMode: _isSelectionMode,
+            selectedPhotoIds: _selectedPhotoIds,
+            onToggleSelectPhoto: _toggleSelectPhoto,
+            onToggleSelectionMode: _toggleSelectionMode,
+            onSelectAll: _selectAll,
+            onDeselectAll: _deselectAll,
+            onDeleteSelected: _deleteSelectedPhotos,
+            onAddSelectedToFolder: _addSelectedToFolder,
           ),
-          if (_isLoadingApi)
-            const Positioned(
+          if (_isLoadingApi || _isBackgroundUploading)
+            Positioned(
               top: 0,
               left: 0,
               right: 0,
-              child: LinearProgressIndicator(minHeight: 2),
+              child: LinearProgressIndicator(
+                minHeight: 3,
+                value: _isBackgroundUploading && _uploadTotal > 0
+                    ? (_uploadCurrent / _uploadTotal)
+                    : null,
+              ),
             ),
         ],
       ),
@@ -728,15 +1223,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         titleSpacing: AppSpacing.lg,
         title: Row(
           children: [
-            Container(
+            Neumorphic(
+              inset: true,
+              radius: AppRadii.rPill,
               padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.sm + 2,
-                vertical: AppSpacing.xs,
-              ),
-              decoration: BoxDecoration(
-                color: colors.surfaceMuted,
-                borderRadius: AppRadii.xs,
-                border: Border.all(color: colors.border, width: 1),
+                horizontal: AppSpacing.md,
+                vertical: AppSpacing.xs + 2,
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -759,32 +1251,63 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
             const SizedBox(width: AppSpacing.md),
             _buildApiStatusChip(colors),
+            if (_isBackgroundUploading) ...[
+              const SizedBox(width: AppSpacing.md),
+              Neumorphic(
+                inset: true,
+                radius: AppRadii.rPill,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.md,
+                  vertical: AppSpacing.sm,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 10,
+                      height: 10,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 1.5,
+                        color: colors.foreground,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.xs + 2),
+                    Text(
+                      'Đang tải lên: $_uploadCurrent/$_uploadTotal',
+                      style: AppTypography.caption.copyWith(
+                        color: colors.foreground,
+                        fontFeatures: AppTypography.tabularFigures,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
         actions: [
           if (_api.isAuthenticated) ...[
-            IconButton(
-              icon: const Icon(Icons.lock_outline, size: 20),
+            NeumorphicIconButton(
+              icon: Icons.lock_outline,
               tooltip: 'Khóa Vault bằng PIN',
               onPressed: _lockVaultManually,
             ),
-            IconButton(
-              icon: const Icon(Icons.refresh_rounded, size: 20),
+            NeumorphicIconButton(
+              icon: Icons.refresh_rounded,
               tooltip: 'Làm mới dữ liệu',
               onPressed: _loadApiData,
             ),
           ],
-          IconButton(
-            icon: const Icon(Icons.cloud_upload_outlined, size: 20),
-            tooltip: 'Tải nhiều ảnh lên Vault (Desktop / App)',
-            onPressed: _pickAndUploadMultiplePhotos,
+          NeumorphicIconButton(
+            icon: Icons.cloud_upload_outlined,
+            tooltip: 'Tải nhiều ảnh & video lên Vault (Desktop / App)',
+            onPressed: _showUploadMenu,
           ),
-          IconButton(
-            icon: Icon(
-              isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
-              size: 20,
-            ),
-            tooltip: isDark ? 'Chuyển sang chế độ sáng' : 'Chuyển sang chế độ tối',
+          NeumorphicIconButton(
+            icon: isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+            tooltip: isDark
+                ? 'Chuyển sang chế độ sáng'
+                : 'Chuyển sang chế độ tối',
             onPressed: widget.onToggleTheme,
           ),
           const SizedBox(width: AppSpacing.sm),
@@ -815,17 +1338,30 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   onZoomChanged: _onZoomChanged,
                   onPhotoTap: _openPhotoViewer,
                   onPhotoLongPress: _showPhotoOptions,
-                  onUploadMockPhoto: _pickAndUploadMultiplePhotos,
+                  onUploadMockPhoto: _showUploadMenu,
+                  isSelectionMode: _isSelectionMode,
+                  selectedPhotoIds: _selectedPhotoIds,
+                  onToggleSelectPhoto: _toggleSelectPhoto,
+                  onToggleSelectionMode: _toggleSelectionMode,
+                  onSelectAll: _selectAll,
+                  onDeselectAll: _deselectAll,
+                  onDeleteSelected: _deleteSelectedPhotos,
+                  onAddSelectedToFolder: _addSelectedToFolder,
                 ),
               ),
             ],
           ),
-          if (_isLoadingApi)
-            const Positioned(
+          if (_isLoadingApi || _isBackgroundUploading)
+            Positioned(
               top: 0,
               left: 0,
               right: 0,
-              child: LinearProgressIndicator(minHeight: 2),
+              child: LinearProgressIndicator(
+                minHeight: 2,
+                value: _isBackgroundUploading && _uploadTotal > 0
+                    ? (_uploadCurrent / _uploadTotal)
+                    : null,
+              ),
             ),
         ],
       ),

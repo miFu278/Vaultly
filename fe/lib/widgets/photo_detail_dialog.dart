@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/photo_item.dart';
 import '../theme/app_tokens.dart';
+import 'neumorphic.dart';
 
 class PhotoDetailDialog extends StatelessWidget {
   final PhotoItem photo;
@@ -10,7 +11,7 @@ class PhotoDetailDialog extends StatelessWidget {
   static Future<void> show(BuildContext context, PhotoItem photo) {
     return showDialog(
       context: context,
-      barrierColor: Colors.black54,
+      barrierColor: Colors.black.withValues(alpha: 0.45),
       builder: (context) => PhotoDetailDialog(photo: photo),
     );
   }
@@ -19,32 +20,21 @@ class PhotoDetailDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
 
-    return Dialog(
-      backgroundColor: colors.surface,
-      surfaceTintColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.lg,
-        vertical: AppSpacing.xl,
-      ),
-      shape: RoundedRectangleBorder(
-        borderRadius: AppRadii.lg,
-        side: BorderSide(color: colors.border, width: 1),
-      ),
-      elevation: 0,
+    return NeumorphicDialog(
+      maxWidth: AppSpacing.dialogMax,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(
-          maxWidth: AppSpacing.dialogMax,
-          maxHeight: 720,
-        ),
+        constraints: const BoxConstraints(maxHeight: 720),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // Top title row
             Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.lg,
-                vertical: AppSpacing.sm + 2,
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.sm,
+                AppSpacing.sm,
+                AppSpacing.sm,
               ),
               child: Row(
                 children: [
@@ -64,8 +54,8 @@ class PhotoDetailDialog extends StatelessWidget {
                       ),
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded, size: 20),
+                  NeumorphicIconButton(
+                    icon: Icons.close_rounded,
                     tooltip: 'Đóng',
                     onPressed: () => Navigator.of(context).pop(),
                   ),
@@ -74,51 +64,56 @@ class PhotoDetailDialog extends StatelessWidget {
             ),
             Divider(height: 1, color: colors.border),
 
-            // Photo preview area
+            // Debossed media well
             Expanded(
-              child: Container(
+              child: Neumorphic(
+                inset: true,
+                radius: AppRadii.rMd,
                 color: colors.mediaCanvas,
-                alignment: Alignment.center,
-                child: InteractiveViewer(
-                  minScale: 0.8,
-                  maxScale: 3.5,
-                  child: Image.network(
-                    photo.fullUrl,
-                    fit: BoxFit.contain,
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return Center(
-                        child: SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: colors.foregroundMuted,
-                          ),
-                        ),
-                      );
-                    },
-                    errorBuilder: (context, error, stackTrace) {
-                      return Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.broken_image_outlined,
-                              size: 40,
+                margin: const EdgeInsets.all(AppSpacing.md),
+                clipContent: true,
+                child: Center(
+                  child: InteractiveViewer(
+                    minScale: 0.8,
+                    maxScale: 3.5,
+                    child: Image.network(
+                      photo.fullUrl,
+                      fit: BoxFit.contain,
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return Center(
+                          child: SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
                               color: colors.foregroundMuted,
                             ),
-                            const SizedBox(height: AppSpacing.sm),
-                            Text(
-                              'Không thể tải ảnh gốc',
-                              style: AppTypography.body.copyWith(
+                          ),
+                        );
+                      },
+                      errorBuilder: (context, error, stackTrace) {
+                        return Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.broken_image_outlined,
+                                size: 40,
                                 color: colors.foregroundMuted,
                               ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
+                              const SizedBox(height: AppSpacing.sm),
+                              Text(
+                                'Không thể tải ảnh gốc',
+                                style: AppTypography.body.copyWith(
+                                  color: colors.foregroundMuted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
                   ),
                 ),
               ),
@@ -128,29 +123,33 @@ class PhotoDetailDialog extends StatelessWidget {
 
             // Metadata footer carrying the single primary action
             Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.lg,
-                vertical: AppSpacing.md,
-              ),
+              padding: const EdgeInsets.all(AppSpacing.md),
               child: Row(
                 children: [
-                  _MetadataItem(
-                    icon: Icons.calendar_today_outlined,
-                    text: '${photo.createdAt.day.toString().padLeft(2, '0')}/${photo.createdAt.month.toString().padLeft(2, '0')}/${photo.createdAt.year}',
-                  ),
-                  const SizedBox(width: AppSpacing.lg),
-                  _MetadataItem(
-                    icon: Icons.data_usage_outlined,
-                    text: photo.fileSize,
-                  ),
-                  const SizedBox(width: AppSpacing.lg),
-                  if (photo.isEncrypted)
-                    const _MetadataItem(
-                      icon: Icons.enhanced_encryption_outlined,
-                      text: 'E2EE XChaCha20',
+                  Expanded(
+                    child: Wrap(
+                      spacing: AppSpacing.lg,
+                      runSpacing: AppSpacing.xs,
+                      children: [
+                        _MetadataItem(
+                          icon: Icons.calendar_today_outlined,
+                          text:
+                              '${photo.createdAt.day.toString().padLeft(2, '0')}/${photo.createdAt.month.toString().padLeft(2, '0')}/${photo.createdAt.year}',
+                        ),
+                        _MetadataItem(
+                          icon: Icons.data_usage_outlined,
+                          text: photo.fileSize,
+                        ),
+                        if (photo.isEncrypted)
+                          const _MetadataItem(
+                            icon: Icons.enhanced_encryption_outlined,
+                            text: 'E2EE XChaCha20',
+                          ),
+                      ],
                     ),
-                  const Spacer(),
-                  FilledButton.icon(
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  NeumorphicButton(
                     onPressed: () {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
@@ -159,15 +158,9 @@ class PhotoDetailDialog extends StatelessWidget {
                         ),
                       );
                     },
-                    icon: const Icon(Icons.download_outlined, size: 16),
-                    label: const Text('Tải về'),
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.md,
-                        vertical: AppSpacing.sm,
-                      ),
-                      textStyle: AppTypography.label,
-                    ),
+                    icon: Icons.download_outlined,
+                    label: 'Tải về',
+                    primary: true,
                   ),
                 ],
               ),

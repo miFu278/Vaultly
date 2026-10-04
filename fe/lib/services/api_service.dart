@@ -22,8 +22,13 @@ class ApiException implements Exception {
 class UploadImageItem {
   final Uint8List bytes;
   final String fileName;
+  final bool isVideo;
 
-  const UploadImageItem({required this.bytes, required this.fileName});
+  const UploadImageItem({
+    required this.bytes,
+    required this.fileName,
+    this.isVideo = false,
+  });
 }
 
 class ApiService {
@@ -441,6 +446,12 @@ class ApiService {
     // The backend decrypts and streams the image at `/files/{id}/view`.
     final viewUrl = '$_baseUrl/files/$fileId/view?token=$_token';
 
+    final isVid = cleanTitle.toLowerCase().endsWith('.mp4') ||
+        cleanTitle.toLowerCase().endsWith('.mov') ||
+        cleanTitle.toLowerCase().endsWith('.webm') ||
+        cleanTitle.toLowerCase().endsWith('.mkv') ||
+        (item['content_type']?.toString().startsWith('video/') ?? false);
+
     return PhotoItem(
       id: fileId,
       folderId: fId,
@@ -450,6 +461,7 @@ class ApiService {
       createdAt: createdAt,
       fileSize: _formatBytes(sizeBytes),
       isEncrypted: true,
+      isVideo: isVid,
     );
   }
 
@@ -467,6 +479,29 @@ class ApiService {
     return res.statusCode == 200;
   }
 
+  /// Batch delete multiple files
+  Future<bool> batchDeleteFiles(List<String> fileIds) async {
+    if (!isAuthenticated) return false;
+    if (fileIds.isEmpty) return true;
+
+    try {
+      final res = await http.post(
+        Uri.parse('$_baseUrl/files/batch-delete'),
+        headers: _authHeaders,
+        body: jsonEncode({'file_ids': fileIds}),
+      );
+      if (res.statusCode == 200 || res.statusCode == 201) return true;
+    } catch (_) {}
+
+    // Fallback: delete one by one
+    bool allSuccess = true;
+    for (final id in fileIds) {
+      final ok = await deleteFile(id);
+      if (!ok) allSuccess = false;
+    }
+    return allSuccess;
+  }
+
   /// Move a file into another folder (or remove it from any folder).
   Future<bool> moveFileToFolder(String fileId, String? folderId) async {
     if (!isAuthenticated) return false;
@@ -477,6 +512,18 @@ class ApiService {
       body: jsonEncode({'folder_id': folderId}),
     );
     return res.statusCode == 200;
+  }
+
+  /// Copy a file into another folder.
+  Future<bool> copyFileToFolder(String fileId, String? folderId) async {
+    if (!isAuthenticated) return false;
+
+    final res = await http.post(
+      Uri.parse('$_baseUrl/files/$fileId/copy'),
+      headers: _authHeaders,
+      body: jsonEncode({'folder_id': folderId}),
+    );
+    return res.statusCode == 200 || res.statusCode == 201;
   }
 
   /// Upload a single image

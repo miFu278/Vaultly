@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/api_service.dart';
 import '../theme/app_tokens.dart';
+import '../widgets/neumorphic.dart';
 
 enum PinLockMode { unlock, setup }
 
@@ -161,26 +162,34 @@ class _PinLockScreenState extends State<PinLockScreen>
     return Scaffold(
       backgroundColor: colors.background,
       body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: AppSpacing.formMax),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Spacer(flex: 2),
+        // Scroll-safe: on short screens the keypad scrolls instead of clipping.
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: constraints.maxHeight - AppSpacing.xl * 2,
+              ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints:
+                      const BoxConstraints(maxWidth: AppSpacing.formMax),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(height: AppSpacing.xl),
 
-                // Shield Icon (Circle allowed for shield mark)
-                Container(
-                  width: 64,
-                  height: 64,
-                  decoration: BoxDecoration(
-                    color: colors.surfaceMuted,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: colors.border, width: 1),
-                  ),
+                      // Shield mark in an extruded disc
+                      Neumorphic(
+                  width: 72,
+                  height: 72,
+                  radius: AppRadii.rPill,
+                  depth: 1.2,
+                  color: colors.surface,
                   child: Icon(
                     Icons.shield_outlined,
-                    size: 28,
+                    size: 30,
                     color: colors.foreground,
                   ),
                 ),
@@ -208,7 +217,7 @@ class _PinLockScreenState extends State<PinLockScreen>
                 ),
                 const SizedBox(height: AppSpacing.xxl),
 
-                // PIN Dots (Circles reserved for PIN dots)
+                // PIN dots inside a debossed well; filled = extruded disc
                 AnimatedBuilder(
                   animation: _shakeAnimation,
                   builder: (context, child) {
@@ -220,31 +229,37 @@ class _PinLockScreenState extends State<PinLockScreen>
                       child: child,
                     );
                   },
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(_pinLength, (index) {
-                      final isFilled = index < _enteredPin.length;
-                      return AnimatedContainer(
-                        duration: const Duration(milliseconds: 150),
-                        margin: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-                        width: isFilled ? 16 : 14,
-                        height: isFilled ? 16 : 14,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: isFilled
-                              ? (_errorMessage != null
-                                  ? colors.danger
-                                  : colors.primary)
-                              : Colors.transparent,
-                          border: Border.all(
-                            color: _errorMessage != null
-                                ? colors.danger
-                                : (isFilled ? colors.primary : colors.border),
-                            width: 1.5,
+                  child: Neumorphic(
+                    inset: true,
+                    radius: AppRadii.rPill,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.lg,
+                      vertical: AppSpacing.md,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(_pinLength, (index) {
+                        final isFilled = index < _enteredPin.length;
+                        final dotColor = _errorMessage != null
+                            ? colors.danger
+                            : colors.foreground;
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.xs + 1,
                           ),
-                        ),
-                      );
-                    }),
+                          child: Neumorphic(
+                            width: isFilled ? 16 : 14,
+                            height: isFilled ? 16 : 14,
+                            radius: AppRadii.rPill,
+                            depth: 0.6,
+                            inset: !isFilled,
+                            color: isFilled ? dotColor : colors.surfaceMuted,
+                            child: const SizedBox.shrink(),
+                          ),
+                        );
+                      }),
+                    ),
                   ),
                 ),
 
@@ -272,28 +287,26 @@ class _PinLockScreenState extends State<PinLockScreen>
                           : null),
                 ),
 
-                const Spacer(flex: 1),
+                const SizedBox(height: AppSpacing.xxl),
 
                 // Numeric Keypad (rounded.md, NOT circles)
                 _buildKeypad(colors),
 
-                const Spacer(flex: 1),
+                const SizedBox(height: AppSpacing.xl),
 
-                // Footer options: Logout
+                // Footer option: log out
                 if (widget.onLogout != null)
-                  TextButton.icon(
+                  NeumorphicButton(
                     onPressed: widget.onLogout,
-                    icon: Icon(Icons.logout, size: 16, color: colors.foregroundMuted),
-                    label: Text(
-                      'Đăng xuất tài khoản',
-                      style: AppTypography.body.copyWith(
-                        color: colors.foregroundMuted,
-                      ),
-                    ),
+                    icon: Icons.logout,
+                    label: 'Đăng xuất tài khoản',
                   ),
 
                 const SizedBox(height: AppSpacing.lg),
-              ],
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         ),
@@ -342,26 +355,20 @@ class _PinLockScreenState extends State<PinLockScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const SizedBox(width: 72, height: 58),
+              const SizedBox(width: 74, height: 58),
               const SizedBox(width: AppSpacing.md),
               _buildKeyButton('0', colors, () => _onNumberPressed(0)),
               const SizedBox(width: AppSpacing.md),
-              SizedBox(
-                width: 72,
+              Neumorphic(
+                width: 74,
                 height: 58,
-                child: OutlinedButton(
-                  onPressed: _onBackspacePressed,
-                  style: OutlinedButton.styleFrom(
-                    padding: EdgeInsets.zero,
-                    shape: const RoundedRectangleBorder(borderRadius: AppRadii.md),
-                    side: BorderSide(color: colors.border, width: 1),
-                    backgroundColor: colors.surfaceMuted,
-                  ),
-                  child: Icon(
-                    Icons.backspace_outlined,
-                    size: 20,
-                    color: colors.foreground,
-                  ),
+                radius: AppRadii.rMd,
+                onTap: _onBackspacePressed,
+                semanticLabel: 'Xóa một số',
+                child: Icon(
+                  Icons.backspace_outlined,
+                  size: 20,
+                  color: colors.foreground,
                 ),
               ),
             ],
@@ -376,27 +383,16 @@ class _PinLockScreenState extends State<PinLockScreen>
     AppColorsData colors,
     VoidCallback onTap,
   ) {
-    return SizedBox(
-      width: 72,
+    return NeumorphicButton(
+      width: 74,
       height: 58,
-      child: OutlinedButton(
-        onPressed: onTap,
-        style: OutlinedButton.styleFrom(
-          padding: EdgeInsets.zero,
-          shape: const RoundedRectangleBorder(borderRadius: AppRadii.md),
-          side: BorderSide(color: colors.border, width: 1),
-          backgroundColor: colors.surfaceMuted,
-          foregroundColor: colors.foreground,
-        ),
-        child: Text(
-          label,
-          style: AppTypography.title.copyWith(
-            fontSize: 22,
-            fontWeight: FontWeight.w500,
-            fontFeatures: AppTypography.tabularFigures,
-            color: colors.foreground,
-          ),
-        ),
+      compact: true,
+      label: label,
+      onPressed: onTap,
+      textStyle: AppTypography.title.copyWith(
+        fontSize: 22,
+        fontWeight: FontWeight.w500,
+        fontFeatures: AppTypography.tabularFigures,
       ),
     );
   }

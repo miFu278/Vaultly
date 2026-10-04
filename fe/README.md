@@ -1,6 +1,6 @@
 # Vaultly Frontend (Flutter Web + Android)
 
-Giao diện Flutter quản lý ảnh bảo mật (**Secure Vault Photos**) phong cách tối giản, sạch sẽ, hỗ trợ responsive hoàn hảo cho cả Web/Desktop (2-pane) và Mobile/Android (Drawer).
+Giao diện Flutter quản lý **ảnh & video** bảo mật (**Secure Media Vault**) — ngôn ngữ thiết kế Neumorphism (xem `DESIGN.md`) — hỗ trợ responsive hoàn hảo cho cả Web/Desktop (2-pane) và Mobile/Android (Drawer).
 
 ---
 
@@ -10,24 +10,27 @@ Giao diện Flutter quản lý ảnh bảo mật (**Secure Vault Photos**) phong
 fe/lib/
 ├── main.dart                       # Khởi tạo MaterialApp, kết nối Light/Dark theme & HomeScreen
 ├── theme/
-│   └── app_theme.dart              # ThemeData trung tính (Light/Dark mode Material 3)
+│   ├── app_theme.dart              # ThemeData Neumorphism (Light/Dark mode Material 3)
+│   └── app_tokens.dart             # Design tokens: màu, AppShadows (raised/inset), radius, motion
 ├── models/
 │   ├── folder.dart                 # Model Folder (id, name, icon, photoCount, isSecure, coverUrl)
-│   └── photo_item.dart             # Model PhotoItem (id, folderId, title, url, size, isEncrypted)
+│   └── photo_item.dart             # Model PhotoItem (id, folderId, title, url, size, isEncrypted, isVideo)
 ├── data/
 │   └── mock_data.dart              # Mock data dùng khi chưa đăng nhập / offline
 ├── services/
 │   └── api_service.dart            # REST client + session/PIN + upload (ApiException cho lỗi HTTP)
 ├── widgets/
+│   ├── neumorphic.dart             # Primitive Neumorphism: Neumorphic, NeumorphicButton/IconButton/Dialog
+│   ├── video_player_view.dart      # Trình phát video E2EE (play/pause, seek, buffering, retry)
 │   ├── folder_sidebar.dart         # Sidebar dạng 1 cột dọc (hỗ trợ collapse 68px/250px & Drawer)
 │   ├── photo_grid.dart             # Lưới ảnh GridView.builder động (2x/3x/4x, pinch-to-zoom)
-│   ├── photo_grid_item.dart        # Ô ảnh vuông 1:1, hover scale nhẹ (web), long-press (mobile)
+│   ├── photo_grid_item.dart        # Ô ảnh/video vuông 1:1, hover lift (web), long-press (mobile)
 │   └── photo_detail_dialog.dart    # Modal xem ảnh phóng to với InteractiveViewer & metadata
 └── screens/
     ├── home_screen.dart            # LayoutBuilder điều phối 2-pane (Web) và Drawer (Mobile)
     ├── auth_screen.dart            # Đăng nhập / đăng ký + cấu hình API base URL
     ├── pin_lock_screen.dart        # Khóa/mở Vault bằng PIN 6 số (đồng bộ server)
-    └── photo_viewer_screen.dart    # Trình xem ảnh full-screen (PageView + filmstrip)
+    └── photo_viewer_screen.dart    # Trình xem full-screen: ảnh (PageView + filmstrip) & video (player)
 ```
 
 ---
@@ -51,16 +54,24 @@ fe/lib/
    - Màn hình rộng (>= 680px): Hiển thị cố định 2-pane (Sidebar + PhotoGrid).
    - Màn hình hẹp (< 680px, Android/Mobile): Sidebar tự động chuyển thành `Drawer` trượt ra từ cạnh trái, AppBar xuất hiện nút menu hamburger.
 
-4. **Style & Theme**:
-   - Tông màu trung tính (đen, trắng, xám), typography chuẩn Material 3.
+4. **Style & Theme (Neumorphism)**:
+   - Soft-UI: `surface == background`, mọi bề mặt được "đùn" lên bằng cặp bóng sáng/tối từ góc trên-trái; không viền cứng.
+   - Trạng thái nhấn/đang chọn là **lõm xuống** (debossed) thay cho ripple Material.
    - Hỗ trợ đầy đủ **Light mode** và **Dark mode**, chuyển đổi tức thì qua nút trên AppBar.
+   - Toàn bộ token nằm ở `theme/app_tokens.dart`; `test/neumorphic_test.dart` chặn hồi quy tương phản text (>= 4.5:1).
 
-5. **Đồng bộ dữ liệu với backend**:
+5. **Video E2EE (upload → xem → phát)**:
+   - Upload video (`.mp4/.mov/.webm/.mkv` hoặc chọn hỗn hợp ảnh + video); server nhận diện bằng magic bytes và lưu `content_type = video/*`.
+   - Ô video trong lưới là card có nút play (không tải stream qua `Image.network`).
+   - Trình xem full-screen phát video qua `video_player` với play/pause, thanh tua (seek), chỉ báo buffering và nút **Thử lại** khi lỗi.
+   - Seek hoạt động nhờ backend trả **HTTP Range (206)** cho `/files/{id}/view`.
+
+6. **Đồng bộ dữ liệu với backend**:
    - Nạp thư mục + toàn bộ ảnh một lần, tính `photoCount` và ảnh bìa theo từng thư mục (backend không trả sẵn).
    - Chuyển thư mục tức thì (lọc client-side), không phát sinh round-trip.
    - Tự động đăng xuất + quay về dữ liệu mock khi token hết hạn (HTTP 401).
 
-6. **PIN bảo vệ Vault (đồng bộ đa thiết bị)**:
+7. **PIN bảo vệ Vault (đồng bộ đa thiết bị)**:
    - PIN 6 số lưu cục bộ và đồng bộ lên server qua `/auth/pin/set`.
    - Máy mới chưa có PIN cục bộ vẫn mở khóa được bằng `/auth/pin/verify`.
    - Tự động khóa sau 15 phút không tương tác.

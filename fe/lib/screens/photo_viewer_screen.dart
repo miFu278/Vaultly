@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/photo_item.dart';
 import '../theme/app_tokens.dart';
+import '../widgets/neumorphic.dart';
+import '../widgets/video_player_view.dart';
 
 class PhotoViewerScreen extends StatefulWidget {
   final List<PhotoItem> photos;
@@ -18,6 +20,15 @@ class PhotoViewerScreen extends StatefulWidget {
 }
 
 class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
+  /// Filmstrip overlay metrics, also used to keep page content clear of it.
+  static const double _filmstripHeight = 52;
+  static const double _filmstripItemSize = 48;
+
+  static double _filmstripReserve(BuildContext context) =>
+      _filmstripHeight +
+      AppSpacing.md * 2 +
+      MediaQuery.of(context).padding.bottom;
+
   late int _currentIndex;
   late PageController _pageController;
   final ScrollController _thumbScrollController = ScrollController();
@@ -50,7 +61,7 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
 
   void _scrollToThumbnail(int index, {bool animate = true}) {
     if (!_thumbScrollController.hasClients) return;
-    const itemWidth = 60.0;
+    final itemWidth = _filmstripItemSize + AppSpacing.xs * 2;
     final screenWidth = MediaQuery.of(context).size.width;
     final targetOffset = (index * itemWidth) - (screenWidth / 2) + (itemWidth / 2);
     final clampedOffset = targetOffset.clamp(
@@ -80,81 +91,93 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: colors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: AppRadii.radiusLg),
-      ),
+      backgroundColor: Colors.transparent,
+      elevation: 0,
       builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.lg,
-              vertical: AppSpacing.md,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 32,
-                    height: 3,
-                    decoration: BoxDecoration(
-                      color: colors.border,
-                      borderRadius: AppRadii.xs,
+        return Neumorphic(
+          depth: 1.4,
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(AppRadii.rXl),
+          ),
+          clipContent: true,
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.lg,
+                vertical: AppSpacing.md,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Neumorphic(
+                      width: 40,
+                      height: 4,
+                      inset: true,
+                      radius: AppRadii.rPill,
+                      color: colors.surfaceMuted,
+                      child: const SizedBox.shrink(),
                     ),
                   ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                Row(
-                  children: [
-                    Icon(Icons.info_outline, size: 18, color: colors.foreground),
-                    const SizedBox(width: AppSpacing.sm),
-                    Text(
-                      'Thông tin ảnh',
-                      style: AppTypography.heading.copyWith(color: colors.foreground),
-                    ),
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.sm,
-                        vertical: AppSpacing.xxs,
+                  const SizedBox(height: AppSpacing.md),
+                  Row(
+                    children: [
+                      Icon(Icons.info_outline,
+                          size: 18, color: colors.foreground),
+                      const SizedBox(width: AppSpacing.sm),
+                      Text(
+                        'Thông tin ảnh',
+                        style: AppTypography.heading
+                            .copyWith(color: colors.foreground),
                       ),
-                      decoration: BoxDecoration(
-                        color: colors.surfaceMuted,
-                        borderRadius: AppRadii.xs,
-                        border: Border.all(color: colors.border, width: 1),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.lock_outline, size: 11, color: colors.foreground),
-                          const SizedBox(width: AppSpacing.xs),
-                          Text(
-                            'E2EE Encrypted',
-                            style: AppTypography.caption.copyWith(
-                              color: colors.foreground,
+                      const Spacer(),
+                      Neumorphic(
+                        inset: true,
+                        radius: AppRadii.rPill,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.sm,
+                          vertical: AppSpacing.xs,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.lock_outline,
+                                size: 11, color: colors.foregroundMuted),
+                            const SizedBox(width: AppSpacing.xs),
+                            Text(
+                              'E2EE Encrypted',
+                              style: AppTypography.caption.copyWith(
+                                color: colors.foreground,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.md),
-                Divider(height: 1, color: colors.border),
-                const SizedBox(height: AppSpacing.sm),
-                _InfoRow(label: 'Tên tệp', value: photo.title),
-                _InfoRow(
-                  label: 'Ngày lưu',
-                  value:
-                      '${photo.createdAt.hour.toString().padLeft(2, '0')}:${photo.createdAt.minute.toString().padLeft(2, '0')} • ${photo.createdAt.day.toString().padLeft(2, '0')}/${photo.createdAt.month.toString().padLeft(2, '0')}/${photo.createdAt.year}',
-                ),
-                _InfoRow(label: 'Dung lượng', value: photo.fileSize),
-                _InfoRow(label: 'Thuật toán', value: 'XChaCha20-Poly1305'),
-                _InfoRow(label: 'Trạng thái', value: 'Mã hóa đầu cuối (Client E2EE)'),
-                const SizedBox(height: AppSpacing.sm),
-              ],
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  Divider(height: 1, color: colors.border),
+                  const SizedBox(height: AppSpacing.sm),
+                  _InfoRow(label: 'Tên tệp', value: photo.title),
+                  _InfoRow(
+                    label: 'Loại tệp',
+                    value: photo.checkIsVideo ? 'Video' : 'Ảnh',
+                  ),
+                  _InfoRow(
+                    label: 'Ngày lưu',
+                    value:
+                        '${photo.createdAt.hour.toString().padLeft(2, '0')}:${photo.createdAt.minute.toString().padLeft(2, '0')} • ${photo.createdAt.day.toString().padLeft(2, '0')}/${photo.createdAt.month.toString().padLeft(2, '0')}/${photo.createdAt.year}',
+                  ),
+                  _InfoRow(label: 'Dung lượng', value: photo.fileSize),
+                  _InfoRow(label: 'Thuật toán', value: 'XChaCha20-Poly1305'),
+                  _InfoRow(
+                      label: 'Trạng thái',
+                      value: 'Mã hóa đầu cuối (Client E2EE)'),
+                  const SizedBox(height: AppSpacing.sm),
+                ],
+              ),
             ),
           ),
         );
@@ -203,6 +226,22 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
               onPageChanged: _onPageChanged,
               itemBuilder: (context, index) {
                 final photo = widget.photos[index];
+
+                // Video plays through its own controls; a tap toggles playback
+                // instead of the image-viewer chrome.
+                if (photo.checkIsVideo) {
+                  return Padding(
+                    padding: EdgeInsets.only(
+                      top: MediaQuery.of(context).padding.top +
+                          kToolbarHeight,
+                      bottom: _filmstripReserve(context),
+                      left: AppSpacing.lg,
+                      right: AppSpacing.lg,
+                    ),
+                    child: VideoPlayerView(url: photo.fullUrl),
+                  );
+                }
+
                 return GestureDetector(
                   onTap: _toggleChrome,
                   child: InteractiveViewer(
@@ -210,28 +249,33 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                     maxScale: 4.0,
                     clipBehavior: Clip.none,
                     child: Center(
-                      child: Hero(
-                        tag: 'photo_${photo.id}',
-                        child: Image.network(
-                          photo.fullUrl,
-                          fit: BoxFit.contain,
-                          loadingBuilder: (context, child, progress) {
-                            if (progress == null) return child;
-                            return Center(
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: colors.foregroundMuted,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Hero(
+                            tag: 'photo_${photo.id}',
+                            child: Image.network(
+                              photo.fullUrl,
+                              fit: BoxFit.contain,
+                              loadingBuilder: (context, child, progress) {
+                                if (progress == null) return child;
+                                return Center(
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: colors.foregroundMuted,
+                                  ),
+                                );
+                              },
+                              errorBuilder: (context, error, stackTrace) => Center(
+                                child: Icon(
+                                  Icons.broken_image_outlined,
+                                  size: 48,
+                                  color: colors.foregroundMuted,
+                                ),
                               ),
-                            );
-                          },
-                          errorBuilder: (context, error, stackTrace) => Center(
-                            child: Icon(
-                              Icons.broken_image_outlined,
-                              size: 48,
-                              color: colors.foregroundMuted,
                             ),
                           ),
-                        ),
+                        ],
                       ),
                     ),
                   ),
@@ -349,7 +393,7 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                       ),
                     ),
                     child: SizedBox(
-                      height: 52,
+                      height: _filmstripHeight,
                       child: ListView.builder(
                         controller: _thumbScrollController,
                         scrollDirection: Axis.horizontal,
@@ -368,9 +412,9 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                               );
                             },
                             child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 150),
-                              width: 48,
-                              height: 48,
+                              duration: AppMotion.fast,
+                              width: _filmstripItemSize,
+                              height: _filmstripItemSize,
                               margin: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
                               decoration: BoxDecoration(
                                 borderRadius: AppRadii.xs,
@@ -382,14 +426,27 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                               clipBehavior: Clip.antiAlias,
                               child: Opacity(
                                 opacity: isSelected ? 1.0 : 0.45,
-                                child: Image.network(
-                                  photo.thumbnailUrl,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) => Container(
-                                    color: Colors.white12,
-                                    child: const Icon(Icons.image, size: 20, color: Colors.white38),
-                                  ),
-                                ),
+                                // Videos have no server-side poster frame, so a
+                                // deliberate icon beats a failed image decode.
+                                child: photo.checkIsVideo
+                                    ? const ColoredBox(
+                                        color: Colors.white12,
+                                        child: Icon(
+                                          Icons.play_arrow_rounded,
+                                          size: 22,
+                                          color: Colors.white70,
+                                        ),
+                                      )
+                                    : Image.network(
+                                        photo.thumbnailUrl,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (context, error, stackTrace) =>
+                                            const ColoredBox(
+                                          color: Colors.white12,
+                                          child: Icon(Icons.image,
+                                              size: 20, color: Colors.white38),
+                                        ),
+                                      ),
                               ),
                             ),
                           );

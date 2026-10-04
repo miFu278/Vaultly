@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../theme/app_tokens.dart';
+import '../widgets/neumorphic.dart';
 import '../widgets/segmented_control.dart';
 
 class AuthScreen extends StatefulWidget {
@@ -116,19 +117,17 @@ class _AuthScreenState extends State<AuthScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Brand Icon ({rounded.xl} hero icon tile)
+                    // Brand mark in an extruded hero tile ({rounded.xl})
                     Center(
-                      child: Container(
-                        width: 60,
-                        height: 60,
-                        decoration: BoxDecoration(
-                          color: colors.surfaceMuted,
-                          borderRadius: AppRadii.xl,
-                          border: Border.all(color: colors.border, width: 1),
-                        ),
+                      child: Neumorphic(
+                        width: 68,
+                        height: 68,
+                        radius: AppRadii.rXl,
+                        depth: 1.2,
+                        color: colors.surface,
                         child: Icon(
                           Icons.lock_outline_rounded,
-                          size: 28,
+                          size: 30,
                           color: colors.foreground,
                         ),
                       ),
@@ -167,19 +166,17 @@ class _AuthScreenState extends State<AuthScreen> {
 
                     // Error Banner in danger color if any
                     if (_errorMessage != null) ...[
-                      Container(
+                      Neumorphic(
+                        depth: 0.7,
+                        radius: AppRadii.rSm,
                         padding: const EdgeInsets.symmetric(
                           horizontal: AppSpacing.md,
                           vertical: AppSpacing.sm + 2,
                         ),
-                        decoration: BoxDecoration(
-                          color: colors.surfaceMuted,
-                          borderRadius: AppRadii.sm,
-                          border: Border.all(color: colors.danger, width: 1),
-                        ),
                         child: Row(
                           children: [
-                            Icon(Icons.error_outline, size: 16, color: colors.danger),
+                            Icon(Icons.error_outline,
+                                size: 16, color: colors.danger),
                             const SizedBox(width: AppSpacing.sm),
                             Expanded(
                               child: Text(
@@ -232,6 +229,9 @@ class _AuthScreenState extends State<AuthScreen> {
                         labelText: 'Mật khẩu',
                         prefixIcon: const Icon(Icons.lock_outline, size: 18),
                         suffixIcon: IconButton(
+                          tooltip: _obscurePassword
+                              ? 'Ẩn mật khẩu'
+                              : 'Hiện mật khẩu',
                           icon: Icon(
                             _obscurePassword
                                 ? Icons.visibility_outlined
@@ -266,6 +266,9 @@ class _AuthScreenState extends State<AuthScreen> {
                           labelText: 'Xác nhận mật khẩu',
                           prefixIcon: const Icon(Icons.lock_reset_outlined, size: 18),
                           suffixIcon: IconButton(
+                            tooltip: _obscureConfirmPassword
+                                ? 'Ẩn mật khẩu'
+                                : 'Hiện mật khẩu',
                             icon: Icon(
                               _obscureConfirmPassword
                                   ? Icons.visibility_outlined
@@ -292,56 +295,65 @@ class _AuthScreenState extends State<AuthScreen> {
 
                     const SizedBox(height: AppSpacing.xl),
 
-                    // Primary Action Button ({colors.primary} filled, single primary action)
-                    SizedBox(
-                      height: 44,
-                      child: FilledButton(
-                        onPressed: _isLoading ? null : _submit,
-                        child: _isLoading
-                            ? SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: colors.surface,
-                                ),
-                              )
-                            : Text(
-                                _activeTab == 0 ? 'Đăng nhập' : 'Tạo tài khoản',
+                    // Primary Action Button (single ink-filled action)
+                    Neumorphic(
+                      width: double.infinity,
+                      height: 48,
+                      radius: AppRadii.rMd,
+                      depth: 1.1,
+                      color: colors.primary,
+                      onTap: _isLoading ? null : _submit,
+                      semanticLabel:
+                          _activeTab == 0 ? 'Đăng nhập' : 'Tạo tài khoản',
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (_isLoading) ...[
+                            SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Theme.of(context).colorScheme.onPrimary,
                               ),
+                            ),
+                            const SizedBox(width: AppSpacing.sm),
+                          ],
+                          Text(
+                            _activeTab == 0 ? 'Đăng nhập' : 'Tạo tài khoản',
+                            style: AppTypography.label.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: Theme.of(context).colorScheme.onPrimary,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
 
                     const SizedBox(height: AppSpacing.sm + 2),
 
-                    // 1-Click Demo Account Login (OutlinedButton secondary)
-                    OutlinedButton.icon(
+                    // 1-Click Demo Account Login
+                    NeumorphicButton(
                       onPressed: _isLoading ? null : _fillDemoAccount,
-                      icon: const Icon(Icons.bolt_outlined, size: 16),
-                      label: const Text('Dùng thử tài khoản Demo'),
+                      icon: Icons.bolt_outlined,
+                      label: 'Dùng thử tài khoản Demo',
                     ),
 
                     const SizedBox(height: AppSpacing.lg),
 
-                    // Collapsible Backend URL Setting
+                    // Collapsible Backend URL Setting (tertiary control)
                     Center(
-                      child: TextButton.icon(
+                      child: NeumorphicButton(
+                        compact: true,
                         onPressed: () =>
                             setState(() => _showUrlConfig = !_showUrlConfig),
-                        icon: Icon(
-                          _showUrlConfig
-                              ? Icons.keyboard_arrow_up
-                              : Icons.settings_outlined,
-                          size: 14,
-                        ),
-                        label: Text(
-                          _showUrlConfig
-                              ? 'Ẩn cấu hình máy chủ'
-                              : 'Tùy chỉnh API Server',
-                          style: AppTypography.label.copyWith(
-                            color: colors.foregroundMuted,
-                          ),
-                        ),
+                        icon: _showUrlConfig
+                            ? Icons.keyboard_arrow_up
+                            : Icons.settings_outlined,
+                        label: _showUrlConfig
+                            ? 'Ẩn cấu hình máy chủ'
+                            : 'Tùy chỉnh API Server',
                       ),
                     ),
 
