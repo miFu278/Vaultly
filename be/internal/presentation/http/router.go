@@ -22,10 +22,21 @@ type RouterDependencies struct {
 	MaxUploadBytes int64
 }
 
+// maxJSONBodyBytes caps request bodies on the JSON endpoints (uploads set their
+// own, larger cap).
+const maxJSONBodyBytes int64 = 8 << 20
+
+// multipartMemoryBytes is how much of a multipart upload gin keeps in RAM; the
+// rest is spooled to temp files instead of the heap.
+const multipartMemoryBytes int64 = 4 << 20
+
 func SetupRoutes(r *gin.Engine, deps RouterDependencies) huma.API {
+	r.MaxMultipartMemory = multipartMemoryBytes
+
 	// Setup standard Gin middleware
 	r.Use(gin.Logger())
 	r.Use(gin.Recovery())
+	r.Use(middleware.BodyLimitMiddleware(maxJSONBodyBytes))
 	r.Use(middleware.CORSMiddleware())
 
 	// Configure Huma OpenAPI 3.1 & Scalar interactive docs

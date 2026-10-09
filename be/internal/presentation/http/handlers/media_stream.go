@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"bytes"
 	"errors"
+	"io"
 	"net/http"
 	"time"
 
@@ -30,7 +30,10 @@ const (
 // playback and to seek. Answering 200 with the whole body makes seeking break
 // and can fail playback outright on strict players, so range handling is
 // delegated to http.ServeContent, which implements 200/206/416/HEAD correctly.
-func serveMediaContent(w http.ResponseWriter, r *http.Request, data []byte, contentType string) {
+//
+// content is a seekable decrypted stream, not a buffer: the caller keeps the
+// plaintext on disk/storage and this handler only holds one chunk at a time.
+func serveMediaContent(w http.ResponseWriter, r *http.Request, content io.ReadSeeker, contentType string) {
 	extendDeadline(w, time.Now().Add(mediaWriteWindow), false)
 
 	h := w.Header()
@@ -41,10 +44,7 @@ func serveMediaContent(w http.ResponseWriter, r *http.Request, data []byte, cont
 	// tell the player that ranges are supported.
 	h.Set("Accept-Ranges", "bytes")
 
-	// ponytail: the whole plaintext is decrypted in memory before the first
-	// byte is written, so time-to-first-byte scales with file size.
-	// Upgrade path: chunked secretstream decryption over ranged GetObject reads.
-	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(data))
+	http.ServeContent(w, r, "", time.Time{}, content)
 }
 
 // guardUploadBody caps the request body and widens the read deadline for a

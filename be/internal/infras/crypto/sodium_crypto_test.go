@@ -32,7 +32,7 @@ func TestSodiumCryptoService_Secretstream_Chunked(t *testing.T) {
 	}
 
 	var cipherStream bytes.Buffer
-	err = cryptoSvc.EncryptStream(bytes.NewReader(originalData), &cipherStream, fileKey)
+	_, err = cryptoSvc.EncryptStream(bytes.NewReader(originalData), &cipherStream, fileKey)
 	if err != nil {
 		t.Fatalf("EncryptStream failed: %v", err)
 	}

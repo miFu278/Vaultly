@@ -15,6 +15,7 @@ import (
 	"vaultly-be/internal/infras/config"
 	"vaultly-be/internal/infras/crypto"
 	"vaultly-be/internal/infras/database"
+	"vaultly-be/internal/infras/media"
 	"vaultly-be/internal/infras/repositories"
 	"vaultly-be/internal/infras/storage"
 	presentationHttp "vaultly-be/internal/presentation/http"
@@ -30,6 +31,10 @@ func main() {
 	if cfg.Env == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	}
+
+	// Cap the heap below the container limit so a memory spike triggers GC
+	// instead of an OOM kill.
+	config.ApplyMemoryLimit()
 
 	// 2. Initialize database
 	db, err := database.Connect(cfg)
@@ -62,12 +67,13 @@ func main() {
 	cryptoService := crypto.NewSodiumCryptoService()
 	passwordHasher := crypto.NewBcryptHasher()
 	tokenService := crypto.NewJWTTokenService(cfg.JWTSecret, cfg.JWTExpirationHours)
+	thumbnailer := media.NewImageThumbnailer()
 
 	// 4. Initialize Application Use Cases
 	authUC := usecase.NewAuthUseCase(userRepo, passwordHasher, tokenService)
 	deviceUC := usecase.NewDeviceUseCase(deviceRepo)
 	folderUC := usecase.NewFolderUseCase(folderRepo)
-	fileUC := usecase.NewFileUseCase(fileRepo, deviceRepo, storageService, cryptoService)
+	fileUC := usecase.NewFileUseCase(fileRepo, deviceRepo, storageService, cryptoService, thumbnailer)
 	pairingUC := usecase.NewPairingUseCase(pairingRepo, deviceRepo, fileRepo, tokenService)
 
 	// 5. Initialize Presentation / HTTP Layer

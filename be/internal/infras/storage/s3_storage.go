@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"sync"
 	"time"
 
@@ -22,20 +23,29 @@ type S3StorageService struct {
 	bucketName    string
 	expiration    time.Duration
 	// In-memory fallback for local dev when R2 is not configured
-	memMu   sync.RWMutex
-	memData map[string][]byte
-	memType map[string]string
+	memMu    sync.RWMutex
+	memData  map[string][]byte
+	memBytes int64
+}
+
+// memStoreBudget caps the development fallback store. Without it a deployment
+// that forgets the R2 credentials would grow the heap until the container is
+// OOM-killed; with it the upload fails with a clear error instead.
+const memStoreBudget int64 = 64 << 20
+
+func newMemoryStorage(cfg *config.Config) *S3StorageService {
+	log.Printf("WARNING: R2 credentials are not configured; using in-memory storage (max %d MiB, data is lost on restart)", memStoreBudget>>20)
+	return &S3StorageService{
+		bucketName: cfg.R2BucketName,
+		expiration: time.Duration(cfg.PresignedURLExpirationMinutes) * time.Minute,
+		memData:    make(map[string][]byte),
+	}
 }
 
 func NewS3StorageService(cfg *config.Config) (service.ObjectStorage, error) {
 	// If credentials are not set, return in-memory storage for local dev / testing
 	if cfg.R2AccessKeyID == "" || cfg.R2SecretAccessKey == "" {
-		return &S3StorageService{
-			bucketName: cfg.R2BucketName,
-			expiration: time.Duration(cfg.PresignedURLExpirationMinutes) * time.Minute,
-			memData:    make(map[string][]byte),
-			memType:    make(map[string]string),
-		}, nil
+		return newMemoryStorage(cfg), nil
 	}
 
 	endpoint := cfg.R2Endpoint
@@ -79,7 +89,6 @@ func NewS3StorageService(cfg *config.Config) (service.ObjectStorage, error) {
 		bucketName:    cfg.R2BucketName,
 		expiration:    time.Duration(cfg.PresignedURLExpirationMinutes) * time.Minute,
 		memData:       make(map[string][]byte),
-		memType:       make(map[string]string),
 	}, nil
 }
 
@@ -121,20 +130,16 @@ func (s *S3StorageService) GeneratePresignedGetURL(ctx context.Context, objectKe
 	return req.URL, nil
 }
 
-func (s *S3StorageService) PutObject(ctx context.Context, objectKey string, data []byte, contentType string) error {
+func (s *S3StorageService) PutObjectReader(ctx context.Context, objectKey string, r io.Reader, size int64, contentType string) error {
 	if s.client == nil {
-		s.memMu.Lock()
-		defer s.memMu.Unlock()
-		s.memData[objectKey] = data
-		s.memType[objectKey] = contentType
-		return nil
+		return s.memPut(objectKey, r, size)
 	}
 
 	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:        aws.String(s.bucketName),
 		Key:           aws.String(objectKey),
-		Body:          bytes.NewReader(data),
-		ContentLength: aws.Int64(int64(len(data))),
+		Body:          r,
+		ContentLength: aws.Int64(size),
 		ContentType:   aws.String(contentType),
 	})
 	if err != nil {
@@ -143,15 +148,19 @@ func (s *S3StorageService) PutObject(ctx context.Context, objectKey string, data
 	return nil
 }
 
-func (s *S3StorageService) GetObject(ctx context.Context, objectKey string) ([]byte, string, error) {
+func (s *S3StorageService) GetObjectReader(ctx context.Context, objectKey string) (io.ReadCloser, int64, error) {
 	if s.client == nil {
 		s.memMu.RLock()
-		defer s.memMu.RUnlock()
 		data, exists := s.memData[objectKey]
+		s.memMu.RUnlock()
 		if !exists {
-			return nil, "", fmt.Errorf("object not found: %s", objectKey)
+			return nil, 0, fmt.Errorf("object not found: %s", objectKey)
 		}
-		return data, s.memType[objectKey], nil
+		// Copy so the returned reader stays valid if the object is deleted, and
+		// so the caller does not hold the lock for the whole response.
+		buf := make([]byte, len(data))
+		copy(buf, data)
+		return io.NopCloser(bytes.NewReader(buf)), int64(len(buf)), nil
 	}
 
 	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{
@@ -159,29 +168,79 @@ func (s *S3StorageService) GetObject(ctx context.Context, objectKey string) ([]b
 		Key:    aws.String(objectKey),
 	})
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to get object from storage: %w", err)
+		return nil, 0, fmt.Errorf("failed to get object from storage: %w", err)
 	}
-	defer out.Body.Close()
 
-	data, err := io.ReadAll(out.Body)
+	size := int64(0)
+	if out.ContentLength != nil {
+		size = *out.ContentLength
+	}
+	return out.Body, size, nil
+}
+
+func (s *S3StorageService) GetObjectRange(ctx context.Context, objectKey string, offset, length int64) (io.ReadCloser, error) {
+	if s.client == nil {
+		s.memMu.RLock()
+		data, exists := s.memData[objectKey]
+		s.memMu.RUnlock()
+		if !exists {
+			return nil, fmt.Errorf("object not found: %s", objectKey)
+		}
+		if offset < 0 || offset > int64(len(data)) {
+			return nil, fmt.Errorf("range start %d out of bounds for %s", offset, objectKey)
+		}
+		end := offset + length
+		if end > int64(len(data)) {
+			end = int64(len(data))
+		}
+		buf := make([]byte, end-offset)
+		copy(buf, data[offset:end])
+		return io.NopCloser(bytes.NewReader(buf)), nil
+	}
+
+	if length <= 0 {
+		return nil, fmt.Errorf("invalid range length %d for %s", length, objectKey)
+	}
+	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucketName),
+		Key:    aws.String(objectKey),
+		Range:  aws.String(fmt.Sprintf("bytes=%d-%d", offset, offset+length-1)),
+	})
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to read object body: %w", err)
+		return nil, fmt.Errorf("failed to read object range from storage: %w", err)
 	}
+	return out.Body, nil
+}
 
-	contentType := "application/octet-stream"
-	if out.ContentType != nil {
-		contentType = *out.ContentType
+// memPut buffers a payload in the development fallback store, refusing to grow
+// past memStoreBudget.
+func (s *S3StorageService) memPut(objectKey string, r io.Reader, size int64) error {
+	s.memMu.Lock()
+	defer s.memMu.Unlock()
+
+	if s.memBytes+size > memStoreBudget {
+		return fmt.Errorf("in-memory storage limit (%d MiB) reached, configure R2 credentials", memStoreBudget>>20)
 	}
-
-	return data, contentType, nil
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return fmt.Errorf("failed to read upload body: %w", err)
+	}
+	if old, ok := s.memData[objectKey]; ok {
+		s.memBytes -= int64(len(old))
+	}
+	s.memData[objectKey] = data
+	s.memBytes += int64(len(data))
+	return nil
 }
 
 func (s *S3StorageService) DeleteObject(ctx context.Context, objectKey string) error {
 	if s.client == nil {
 		s.memMu.Lock()
 		defer s.memMu.Unlock()
+		if old, ok := s.memData[objectKey]; ok {
+			s.memBytes -= int64(len(old))
+		}
 		delete(s.memData, objectKey)
-		delete(s.memType, objectKey)
 		return nil
 	}
 

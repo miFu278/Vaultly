@@ -5,6 +5,10 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"image"
+	"image/color"
+	"image/jpeg"
+	"io"
 	"testing"
 	"time"
 
@@ -12,8 +16,10 @@ import (
 	"golang.org/x/crypto/nacl/box"
 	"vaultly-be/internal/application/usecase"
 	"vaultly-be/internal/domain/entity"
+	"vaultly-be/internal/domain/service"
 	"vaultly-be/internal/infras/config"
 	"vaultly-be/internal/infras/crypto"
+	"vaultly-be/internal/infras/media"
 	"vaultly-be/internal/infras/storage"
 )
 
@@ -185,7 +191,7 @@ func TestFileUseCase_UploadAndDecryptImage(t *testing.T) {
 	}
 
 	cryptoSvc := crypto.NewSodiumCryptoService()
-	fileUC := usecase.NewFileUseCase(fileRepo, deviceRepo, storageSvc, cryptoSvc)
+	fileUC := usecase.NewFileUseCase(fileRepo, deviceRepo, storageSvc, cryptoSvc, media.NewImageThumbnailer())
 
 	userID := uuid.New()
 	deviceID := uuid.New()
@@ -224,14 +230,23 @@ func TestFileUseCase_UploadAndDecryptImage(t *testing.T) {
 		t.Fatalf("CipherSize (%d) should be greater than PlainSize (%d) due to secretstream overhead", uploadResp.CipherSize, uploadResp.PlainSize)
 	}
 
-	// 2. Download and Decrypt Image using device's private key
-	decryptedBytes, mimeType, err := fileUC.DownloadAndDecryptImage(context.Background(), userID, &deviceID, uploadResp.FileID, devPrivKeyHex)
+	// 2. Stream and decrypt the image using the device's private key
+	dm, err := fileUC.OpenDecryptedMedia(context.Background(), userID, &deviceID, uploadResp.FileID, devPrivKeyHex)
 	if err != nil {
-		t.Fatalf("DownloadAndDecryptImage failed: %v", err)
+		t.Fatalf("OpenDecryptedMedia failed: %v", err)
+	}
+	defer dm.Close()
+
+	if dm.ContentType != "image/jpeg" {
+		t.Fatalf("Expected mimeType image/jpeg, got %s", dm.ContentType)
+	}
+	if dm.Size != int64(len(rawJPEG)) {
+		t.Fatalf("Expected plaintext size %d, got %d", len(rawJPEG), dm.Size)
 	}
 
-	if mimeType != "image/jpeg" {
-		t.Fatalf("Expected mimeType image/jpeg, got %s", mimeType)
+	decryptedBytes, err := io.ReadAll(dm.Content)
+	if err != nil {
+		t.Fatalf("reading decrypted media failed: %v", err)
 	}
 
 	if !bytes.Equal(rawJPEG, decryptedBytes) {
@@ -252,7 +267,7 @@ func TestUploadAndDecryptWithoutDevice(t *testing.T) {
 	}
 	cryptoService := crypto.NewSodiumCryptoService()
 
-	fileUC := usecase.NewFileUseCase(fileRepo, deviceRepo, storageSvc, cryptoService)
+	fileUC := usecase.NewFileUseCase(fileRepo, deviceRepo, storageSvc, cryptoService, media.NewImageThumbnailer())
 	userID := uuid.New()
 
 	// PNG magic bytes
@@ -268,14 +283,20 @@ func TestUploadAndDecryptWithoutDevice(t *testing.T) {
 		t.Fatalf("Expected contentType image/png, got %s", uploadResp.ContentType)
 	}
 
-	// 2. Download and decrypt directly (as done by GET /files/:id/view without device keys)
-	decryptedBytes, mimeType, err := fileUC.DownloadAndDecryptImage(context.Background(), userID, nil, uploadResp.FileID)
+	// 2. Stream and decrypt directly (as done by GET /files/:id/view without device keys)
+	dm, err := fileUC.OpenDecryptedMedia(context.Background(), userID, nil, uploadResp.FileID)
 	if err != nil {
-		t.Fatalf("DownloadAndDecryptImage directly failed: %v", err)
+		t.Fatalf("OpenDecryptedMedia directly failed: %v", err)
+	}
+	defer dm.Close()
+
+	if dm.ContentType != "image/png" {
+		t.Fatalf("Expected mimeType image/png, got %s", dm.ContentType)
 	}
 
-	if mimeType != "image/png" {
-		t.Fatalf("Expected mimeType image/png, got %s", mimeType)
+	decryptedBytes, err := io.ReadAll(dm.Content)
+	if err != nil {
+		t.Fatalf("reading decrypted media failed: %v", err)
 	}
 
 	if !bytes.Equal(rawPNG, decryptedBytes) {
@@ -283,4 +304,138 @@ func TestUploadAndDecryptWithoutDevice(t *testing.T) {
 	}
 }
 
+// A video-sized upload stores multiple segments, so a range read only has to
+// touch the segment that holds it, and videos get no thumbnail.
+func TestFileUseCase_StreamUploadAndRangeRead(t *testing.T) {
+	fileRepo := NewMockFileRepo()
+	deviceRepo := NewMockDeviceRepo()
+	cfg := &config.Config{
+		R2BucketName:                  "test-bucket",
+		PresignedURLExpirationMinutes: 15,
+	}
+	storageSvc, err := storage.NewS3StorageService(cfg)
+	if err != nil {
+		t.Fatalf("NewS3StorageService failed: %v", err)
+	}
+	fileUC := usecase.NewFileUseCase(fileRepo, deviceRepo, storageSvc, crypto.NewSodiumCryptoService(), media.NewImageThumbnailer())
 
+	userID := uuid.New()
+	plain := bytes.Repeat([]byte("video-frame-payload;"), 300000) // ~6 MiB: two segments
+	rawMP4 := append([]byte{0x00, 0x00, 0x00, 0x18, 'f', 't', 'y', 'p'}, plain...)
+	replay := func() (service.ReadSeekCloser, error) {
+		return nopSeekCloser{bytes.NewReader(rawMP4)}, nil
+	}
+
+	res, err := fileUC.UploadEncryptedStream(context.Background(), userID, nil, "clip.mp4", bytes.NewReader(rawMP4), replay, nil)
+	if err != nil {
+		t.Fatalf("UploadEncryptedStream failed: %v", err)
+	}
+	if res.PlainSize != int64(len(rawMP4)) || res.CipherSize <= res.PlainSize {
+		t.Fatalf("sizes = plain %d cipher %d, want plain %d and a larger cipher", res.PlainSize, res.CipherSize, len(rawMP4))
+	}
+	if res.ContentType != "video/mp4" {
+		t.Fatalf("content type = %s, want video/mp4", res.ContentType)
+	}
+	stored := fileRepo.files[res.FileID]
+	if stored.R2ThumbnailKey != "" {
+		t.Fatalf("video thumbnail key = %q, want empty", stored.R2ThumbnailKey)
+	}
+
+	dm, err := fileUC.OpenDecryptedMedia(context.Background(), userID, nil, res.FileID)
+	if err != nil {
+		t.Fatalf("OpenDecryptedMedia failed: %v", err)
+	}
+	defer dm.Close()
+
+	if dm.Size != int64(len(rawMP4)) {
+		t.Fatalf("media size = %d, want %d", dm.Size, len(rawMP4))
+	}
+	// A tail seek is what a video player does to read its index atom; it must not
+	// have to decrypt the whole object.
+	start := int64(len(rawMP4) - 4096)
+	if _, err := dm.Content.Seek(start, io.SeekStart); err != nil {
+		t.Fatalf("Seek failed: %v", err)
+	}
+	window := make([]byte, 4096)
+	if _, err := io.ReadFull(dm.Content, window); err != nil {
+		t.Fatalf("ReadFull failed: %v", err)
+	}
+	if !bytes.Equal(window, rawMP4[start:]) {
+		t.Fatal("ranged read did not match the uploaded payload")
+	}
+}
+
+// Images get an encrypted preview object next to them so a gallery never has to
+// pull a full-resolution photo.
+func TestFileUseCase_UploadGeneratesEncryptedThumbnail(t *testing.T) {
+	fileRepo := NewMockFileRepo()
+	deviceRepo := NewMockDeviceRepo()
+	cfg := &config.Config{
+		R2BucketName:                  "test-bucket",
+		PresignedURLExpirationMinutes: 15,
+	}
+	storageSvc, err := storage.NewS3StorageService(cfg)
+	if err != nil {
+		t.Fatalf("NewS3StorageService failed: %v", err)
+	}
+	fileUC := usecase.NewFileUseCase(fileRepo, deviceRepo, storageSvc, crypto.NewSodiumCryptoService(), media.NewImageThumbnailer())
+
+	// A real 1200x800 JPEG, so the thumbnailer has something to decode.
+	src := image.NewRGBA(image.Rect(0, 0, 1200, 800))
+	for y := 0; y < 800; y++ {
+		for x := 0; x < 1200; x++ {
+			src.Set(x, y, color.RGBA{R: uint8(x % 256), G: uint8(y % 256), B: 128, A: 255})
+		}
+	}
+	var rawJPEG bytes.Buffer
+	if err := jpeg.Encode(&rawJPEG, src, &jpeg.Options{Quality: 90}); err != nil {
+		t.Fatalf("jpeg.Encode failed: %v", err)
+	}
+	payload := rawJPEG.Bytes()
+
+	userID := uuid.New()
+	replay := func() (service.ReadSeekCloser, error) {
+		return nopSeekCloser{bytes.NewReader(payload)}, nil
+	}
+	res, err := fileUC.UploadEncryptedStream(context.Background(), userID, nil, "big.jpg", bytes.NewReader(payload), replay, nil)
+	if err != nil {
+		t.Fatalf("UploadEncryptedStream failed: %v", err)
+	}
+
+	stored := fileRepo.files[res.FileID]
+	if stored.R2ThumbnailKey == "" {
+		t.Fatal("expected a thumbnail object key on the file record")
+	}
+	if stored.Size != int64(len(payload)) {
+		t.Fatalf("stored size = %d, want the plaintext size %d", stored.Size, len(payload))
+	}
+
+	thumb, err := fileUC.OpenDecryptedThumbnail(context.Background(), userID, nil, res.FileID)
+	if err != nil {
+		t.Fatalf("OpenDecryptedThumbnail failed: %v", err)
+	}
+	defer thumb.Close()
+
+	thumbBytes, err := io.ReadAll(thumb.Content)
+	if err != nil {
+		t.Fatalf("reading thumbnail failed: %v", err)
+	}
+	if len(thumbBytes) == 0 || len(thumbBytes) >= len(payload) {
+		t.Fatalf("thumbnail is %d bytes, want fewer than the %d byte original", len(thumbBytes), len(payload))
+	}
+	cfgImg, format, err := image.DecodeConfig(bytes.NewReader(thumbBytes))
+	if err != nil {
+		t.Fatalf("thumbnail is not a decodable image: %v", err)
+	}
+	if format != "jpeg" {
+		t.Fatalf("thumbnail format = %s, want jpeg", format)
+	}
+	if cfgImg.Width != 512 || cfgImg.Height != 341 {
+		t.Fatalf("thumbnail is %dx%d, want 512x341", cfgImg.Width, cfgImg.Height)
+	}
+}
+
+// nopSeekCloser adapts an in-memory reader to the upload replay contract.
+type nopSeekCloser struct{ *bytes.Reader }
+
+func (nopSeekCloser) Close() error { return nil }

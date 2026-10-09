@@ -97,6 +97,47 @@ Hệ thống tuân thủ chính xác đặc tả kỹ thuật trong `docs/spec.m
 
 ---
 
+## ⚙️ Hiệu năng, seek O(1) & giới hạn bộ nhớ (server nhỏ, ví dụ 512 MB RAM)
+
+Toàn bộ luồng media đều **streaming**, không buffer cả file vào RAM:
+
+| Luồng | Trước | Sau |
+|---|---|---|
+| `POST /files/upload` | Đọc cả file vào RAM + `bytes.Buffer` mã hóa (≈2.5× kích thước file) | Stream plaintext → file tạm ciphertext → PUT lên R2 (RAM ≈ 1 chunk 64 KB) |
+| `GET /files/{id}/view` | Tải cả ciphertext + giải mã ra RAM (≈2× file) cho **mỗi** Range request | Giải mã theo segment, `http.ServeContent` phục vụ 206/416 (RAM ≈ 64 KB, mạng ≈ 1 segment) |
+| `GET /files/{id}/view?variant=thumb` | — | Ảnh xem trước 512px (~30–60 KB) đã mã hóa, sinh sẵn lúc upload |
+| `GET /files`, JSON body | Không giới hạn | Body JSON tối đa 8 MB; multipart RAM 4 MB (phần còn lại ra temp disk) |
+
+### Định dạng object chia segment (O(1) seek)
+
+Object mới (`VLTYSEG1`) được chia thành các segment **độc lập**, mỗi segment 1 MiB plaintext (segment cuối nhỏ hơn) và có header secretstream riêng:
+
+```text
+[8B magic "VLTYSEG1"][u64 plaintextSize][u32 segmentPlainSize][segment 0][segment 1]...
+```
+
+Vì mọi segment (trừ segment cuối) đều đúng bằng `segmentPlainSize`, offset ciphertext của segment thứ *i* tính được trong O(1) — không cần bảng index, không phải đọc trước object. Hệ quả:
+
+- **Tua video = 1 range GET**: player đọc `moov` ở cuối file chỉ tải segment cuối, không giải mã cả video → mở video nhanh thay vì chờ giải mã từ đầu.
+- **RAM không đổi theo kích thước file**: luôn giữ 1 chunk 64 KB, bất kể video 500 MB.
+- Segment cũ (định dạng cũ, 1 secretstream duy nhất) vẫn đọc được: reader tự nhận diện qua magic và coi cả object là 1 segment.
+- Mỗi segment dùng cùng file key nhưng **header random riêng**, nên không tái sử dụng keystream.
+- Client muốn giải mã cục bộ cần hỗ trợ định dạng này; `nonce` trong DB vẫn giữ dạng `headerHex:keyHex` như trước.
+
+### Thumbnail
+
+Server giải mã ảnh một lần lúc upload, resize (hộp lọc, cạnh dài 512 px) và mã hóa lại thành JPEG bằng **cùng file key** rồi lưu cạnh object gốc (key `..._thumb`), ghi vào cột `r2_thumbnail_key`. FE dùng `GET /files/{id}/view?variant=thumb` cho lưới gallery. Video (và WebP không có decoder thuần Go) không có thumbnail — sẽ fallback sang ảnh gốc.
+
+Ngoài ra:
+
+- Heap của Go tự động bị chặn ở 80% giới hạn cgroup (`config.ApplyMemoryLimit`), nên khi căng thẳng GC chạy trước khi kernel OOM-kill. Override bằng `GOMEMLIMIT`.
+- `MAX_UPLOAD_MB` giờ chỉ giới hạn **temp disk** (plaintext do multipart spool + ciphertext): cần dung lượng trống ≥ 2× file lớn nhất.
+- `SegmentPlainSize` (1 MiB) là điểm cân bằng: nhỏ hơn → ít lãng phí khi client hỏi range nhỏ, nhưng nhiều request hơn khi phát liên tục.
+
+Các bước tối ưu tiếp theo (chưa làm): cache segment đã giải mã trong RAM, video poster bằng ffmpeg, ETag + cache trên client, nén JSON.
+
+---
+
 ## 🚀 Hướng dẫn chạy cục bộ & Build
 
 > ⚠️ **Lưu ý lệnh build trong Go:**
@@ -161,11 +202,12 @@ Server sẽ lắng nghe tại `http://localhost:8080`.
 - `POST /files/{id}/complete` — Báo upload xong và lưu wrapped keys cho từng device
 - `GET /files` — Danh sách tất cả file metadata
 - `GET /files/{id}/download` — Lấy presigned GET URL ảnh full-res + wrapped key
-- `GET /files/{id}/thumbnail` — **Lấy presigned GET URL cho thumbnail hiển thị nhanh**
+- `GET /files/{id}/thumbnail` — **Lấy presigned GET URL cho thumbnail (dành cho client tự giải mã)**
 - `DELETE /files/{id}` — Xóa file metadata và ciphertext khỏi storage
-- `POST /files/upload` — Upload ảnh **và video** trực tiếp (multipart/form-data), mã hóa bằng `crypto_secretstream`; giới hạn `MAX_UPLOAD_MB` (413 nếu vượt)
-- `POST /files/encrypt-upload` — Upload media Base64 JSON, mã hóa bằng `crypto_secretstream`
-- `GET /files/{id}/view` — Giải mã và stream media về client: hỗ trợ **HTTP Range (206/416)** để video phát và tua được
+- `POST /files/upload` — Upload ảnh **và video** trực tiếp (multipart/form-data), mã hóa chia segment theo luồng, sinh thumbnail cho ảnh; giới hạn `MAX_UPLOAD_MB` (413 nếu vượt)
+- `POST /files/encrypt-upload` — Upload media Base64 JSON, mã hóa bằng `crypto_secretstream` (buffer trong RAM: chỉ dùng cho file nhỏ/test API)
+- `GET /files/{id}/view` — Giải mã và stream media về client: hỗ trợ **HTTP Range (206/416)** để video phát và tua được, chỉ đọc segment chứa range đó
+- `GET /files/{id}/view?variant=thumb` — Ảnh xem trước nhỏ đã giải mã, dùng cho lưới gallery (404 nếu file không có thumbnail)
 
 #### 5. Pairing (Ủy quyền thiết bị mới bằng QR Code)
 - `POST /pairing/start` — Thiết bị B tạo pairing session

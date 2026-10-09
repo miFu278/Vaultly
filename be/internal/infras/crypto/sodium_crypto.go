@@ -53,19 +53,20 @@ func (s *SodiumCryptoService) GenerateNonce() ([]byte, error) {
 // EncryptStream encrypts an input stream in chunks using libsodium crypto_secretstream_xchacha20poly1305.
 // Output format:
 // [24 bytes Header] + for each chunk: [4 bytes length (uint32 big-endian)] [cipherChunk bytes]
-func (s *SodiumCryptoService) EncryptStream(r io.Reader, w io.Writer, key []byte) error {
+// The returned header is the nonce side of the payload; callers must persist it.
+func (s *SodiumCryptoService) EncryptStream(r io.Reader, w io.Writer, key []byte) ([]byte, error) {
 	if len(key) != 32 {
-		return domain.ErrInvalidKeyLength
+		return nil, domain.ErrInvalidKeyLength
 	}
 
 	enc, header, err := secretstream.NewEncryptor(key)
 	if err != nil {
-		return fmt.Errorf("%w: failed to initialize secretstream encryptor: %v", domain.ErrEncryptionFailed, err)
+		return nil, fmt.Errorf("%w: failed to initialize secretstream encryptor: %v", domain.ErrEncryptionFailed, err)
 	}
 
 	// Write 24-byte secretstream header
 	if _, err := w.Write(header); err != nil {
-		return fmt.Errorf("failed to write stream header: %w", err)
+		return nil, fmt.Errorf("failed to write stream header: %w", err)
 	}
 
 	buf := make([]byte, s.chunkSize)
@@ -75,9 +76,9 @@ func (s *SodiumCryptoService) EncryptStream(r io.Reader, w io.Writer, key []byte
 			// Empty input stream edge-case: push TagFinal with 0-byte payload
 			cipherChunk, encErr := enc.Push(nil, secretstream.TagFinal)
 			if encErr != nil {
-				return encErr
+				return nil, encErr
 			}
-			return s.writeChunk(w, cipherChunk)
+			return header, s.writeChunk(w, cipherChunk)
 		}
 
 		currentChunk := buf[:n]
@@ -95,11 +96,11 @@ func (s *SodiumCryptoService) EncryptStream(r io.Reader, w io.Writer, key []byte
 
 		cipherChunk, encErr := enc.Push(currentChunk, tag)
 		if encErr != nil {
-			return fmt.Errorf("%w: %v", domain.ErrEncryptionFailed, encErr)
+			return nil, fmt.Errorf("%w: %v", domain.ErrEncryptionFailed, encErr)
 		}
 
 		if err := s.writeChunk(w, cipherChunk); err != nil {
-			return err
+			return nil, err
 		}
 
 		if isLast {
@@ -110,7 +111,7 @@ func (s *SodiumCryptoService) EncryptStream(r io.Reader, w io.Writer, key []byte
 		r = io.MultiReader(bytes.NewReader(peek[:peekN]), r)
 	}
 
-	return nil
+	return header, nil
 }
 
 func (s *SodiumCryptoService) writeChunk(w io.Writer, cipherChunk []byte) error {
@@ -187,15 +188,11 @@ func (s *SodiumCryptoService) DecryptStream(r io.Reader, w io.Writer, key []byte
 // EncryptBytes is an in-memory helper for EncryptStream
 func (s *SodiumCryptoService) EncryptBytes(plaintext, key []byte) ([]byte, []byte, error) {
 	var out bytes.Buffer
-	if err := s.EncryptStream(bytes.NewReader(plaintext), &out, key); err != nil {
+	header, err := s.EncryptStream(bytes.NewReader(plaintext), &out, key)
+	if err != nil {
 		return nil, nil, err
 	}
-	allBytes := out.Bytes()
-	if len(allBytes) < secretstream.StreamHeaderBytes {
-		return nil, nil, domain.ErrEncryptionFailed
-	}
-	header := allBytes[:secretstream.StreamHeaderBytes]
-	return allBytes, header, nil
+	return out.Bytes(), header, nil
 }
 
 // DecryptBytes is an in-memory helper for DecryptStream

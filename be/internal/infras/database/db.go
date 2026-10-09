@@ -25,15 +25,18 @@ func Connect(cfg *config.Config) (*DB, error) {
 		return nil, fmt.Errorf("unable to parse database config: %w", err)
 	}
 
-	// Disable prepared statement cache for Supabase Transaction Pooler (port 6543 / PgBouncer)
-	// Prevents "ERROR: prepared statement stmtcache_... already exists (SQLSTATE 42P05)"
-	poolConfig.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+	// No prepared-statement cache: Supabase's transaction pooler (PgBouncer)
+	// rejects cached statements (SQLSTATE 42P05). QueryExecModeExec keeps the
+	// extended protocol (binary parameters, no per-query text encoding) without
+	// the cache, so it is both pooler-safe and cheaper than SimpleProtocol.
+	poolConfig.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeExec
 
 	// Tuned for Supabase connection limits
 	poolConfig.MaxConns = 10
 	poolConfig.MinConns = 2
 	poolConfig.MaxConnLifetime = 1 * time.Hour
-	poolConfig.MaxConnIdleTime = 30 * time.Minute
+	poolConfig.MaxConnIdleTime = 15 * time.Minute
+	poolConfig.HealthCheckPeriod = 1 * time.Minute
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {

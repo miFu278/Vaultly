@@ -15,10 +15,11 @@ var (
 	ErrDeviceUnauthorized = errors.New("device not authorized to decrypt this file")
 
 	// File errors
-	ErrFileNotFound   = errors.New("file not found")
-	ErrFileNotPending = errors.New("file is not in pending status")
-	ErrInvalidImage   = errors.New("file is not a valid or supported media format (JPEG, PNG, WebP, GIF, MP4, WebM, MOV allowed)")
-	ErrFileTooLarge   = errors.New("file exceeds maximum allowed size")
+	ErrFileNotFound      = errors.New("file not found")
+	ErrFileNotPending    = errors.New("file is not in pending status")
+	ErrThumbnailNotFound = errors.New("file does not have an attached thumbnail")
+	ErrInvalidImage      = errors.New("file is not a valid or supported media format (JPEG, PNG, WebP, GIF, MP4, WebM, MOV allowed)")
+	ErrFileTooLarge      = errors.New("file exceeds maximum allowed size")
 
 	// Pairing errors
 	ErrPairingNotFound         = errors.New("pairing session not found")

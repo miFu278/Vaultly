@@ -1,14 +1,17 @@
 package handlers
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"vaultly-be/internal/infras/crypto"
 )
 
 // Video players stream with Range requests, so the media endpoint must answer
@@ -79,7 +82,7 @@ func TestServeMediaContent_RangeRequests(t *testing.T) {
 			}
 			rec := httptest.NewRecorder()
 
-			serveMediaContent(rec, req, payload, "video/mp4")
+			serveMediaContent(rec, req, bytes.NewReader(payload), "video/mp4")
 
 			res := rec.Result()
 			if res.StatusCode != tc.wantStatus {
@@ -113,7 +116,7 @@ func TestServeMediaContent_HeadAndEmpty(t *testing.T) {
 		req := httptest.NewRequest(http.MethodHead, "/files/abc/view", nil)
 		rec := httptest.NewRecorder()
 
-		serveMediaContent(rec, req, []byte("0123456789"), "video/mp4")
+		serveMediaContent(rec, req, bytes.NewReader([]byte("0123456789")), "video/mp4")
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200", rec.Code)
@@ -130,7 +133,7 @@ func TestServeMediaContent_HeadAndEmpty(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/files/abc/view", nil)
 		rec := httptest.NewRecorder()
 
-		serveMediaContent(rec, req, nil, "image/jpeg")
+		serveMediaContent(rec, req, bytes.NewReader(nil), "image/jpeg")
 
 		if rec.Code != http.StatusOK && rec.Code != http.StatusNoContent {
 			t.Fatalf("status = %d, want 200/204", rec.Code)
@@ -190,5 +193,80 @@ func TestTooLarge(t *testing.T) {
 	}
 	if !tooLarge(errors.Join(errors.New("multipart: "), &http.MaxBytesError{Limit: 10})) {
 		t.Fatal("wrapped MaxBytesError must be detected")
+	}
+}
+
+// The media endpoint serves a seekable decrypted stream instead of a buffer, so
+// the ranges a video player asks for must come back with the right headers and
+// the exact plaintext bytes.
+func TestServeMediaContent_DecryptedStreamRanges(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cryptoSvc := crypto.NewSodiumCryptoService()
+	plain := make([]byte, 200*1024)
+	for i := range plain {
+		plain[i] = byte(i % 251)
+	}
+	key, err := cryptoSvc.GenerateFileKey()
+	if err != nil {
+		t.Fatalf("GenerateFileKey failed: %v", err)
+	}
+	var cipher bytes.Buffer
+	if _, err := cryptoSvc.EncryptStream(bytes.NewReader(plain), &cipher, key); err != nil {
+		t.Fatalf("EncryptStream failed: %v", err)
+	}
+	stored := cipher.Bytes()
+
+	open := func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(stored)), nil
+	}
+
+	tests := []struct {
+		name        string
+		rangeHeader string
+		wantStatus  int
+		wantStart   int
+		wantEnd     int
+	}{
+		{name: "full body", wantStatus: http.StatusOK, wantStart: 0, wantEnd: len(plain)},
+		{name: "video seek", rangeHeader: "bytes=131072-131200", wantStatus: http.StatusPartialContent, wantStart: 131072, wantEnd: 131201},
+		{name: "open ended", rangeHeader: "bytes=200000-", wantStatus: http.StatusPartialContent, wantStart: 200000, wantEnd: len(plain)},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			initial, err := open()
+			if err != nil {
+				t.Fatalf("open failed: %v", err)
+			}
+			stream, err := cryptoSvc.OpenDecryptStream(key, int64(len(stored)), initial, func(offset, length int64) (io.ReadCloser, error) {
+				return open()
+			})
+			if err != nil {
+				t.Fatalf("OpenDecryptStream failed: %v", err)
+			}
+			defer stream.Close()
+
+			req := httptest.NewRequest(http.MethodGet, "/files/abc/view", nil)
+			if tc.rangeHeader != "" {
+				req.Header.Set("Range", tc.rangeHeader)
+			}
+			rec := httptest.NewRecorder()
+
+			serveMediaContent(rec, req, stream, "video/mp4")
+
+			res := rec.Result()
+			if res.StatusCode != tc.wantStatus {
+				t.Fatalf("status = %d, want %d", res.StatusCode, tc.wantStatus)
+			}
+			body := rec.Body.Bytes()
+			want := plain[tc.wantStart:tc.wantEnd]
+			if !bytes.Equal(body, want) {
+				t.Fatalf("body = %d bytes, want %d bytes of plaintext", len(body), len(want))
+			}
+			if got := res.Header.Get("Content-Length"); got != strconv.Itoa(len(want)) {
+				t.Fatalf("Content-Length = %q, want %d", got, len(want))
+			}
+		})
 	}
 }

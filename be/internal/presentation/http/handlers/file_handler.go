@@ -3,17 +3,18 @@ package handlers
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
-	"io"
 	"mime/multipart"
 	"net/http"
-	"sync"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"vaultly-be/internal/application/dto"
 	"vaultly-be/internal/application/usecase"
+	"vaultly-be/internal/domain"
+	"vaultly-be/internal/domain/service"
 )
 
 type InitUploadInput struct {
@@ -418,55 +419,29 @@ func RegisterFileGinRoutes(r *gin.Engine, fileUC *usecase.FileUseCase, authMiddl
 				return
 			}
 
-			type uploadItem struct {
-				filename string
-				data     []byte
-			}
-			var items []uploadItem
+			// One file at a time: each upload streams through a temp file, so a large
+			// video never lands in memory. Uploading per file also bounds how much
+			// temporary disk a single request can take.
+			var uploaded []*dto.EncryptedImageUploadResponse
 			var errMsgs []string
 
 			for _, fileHeader := range fileHeaders {
-				f, fErr := fileHeader.Open()
+				header := fileHeader
+				f, fErr := header.Open()
 				if fErr != nil {
 					errMsgs = append(errMsgs, fErr.Error())
 					continue
 				}
-				rawBytes, rErr := io.ReadAll(f)
+				// The thumbnail pass re-opens the same spooled part, so the
+				// plaintext is never held in memory.
+				replay := func() (service.ReadSeekCloser, error) { return header.Open() }
+				res, uErr := fileUC.UploadEncryptedStream(c.Request.Context(), userID, deviceID, header.Filename, f, replay, targetFolderID)
 				_ = f.Close()
-				if rErr != nil {
-					errMsgs = append(errMsgs, rErr.Error())
+				if uErr != nil {
+					errMsgs = append(errMsgs, uErr.Error())
 					continue
 				}
-				items = append(items, uploadItem{filename: fileHeader.Filename, data: rawBytes})
-			}
-
-			// Process and encrypt items concurrently using goroutines
-			type uploadResult struct {
-				res *dto.EncryptedImageUploadResponse
-				err error
-			}
-			resultChan := make(chan uploadResult, len(items))
-			var wg sync.WaitGroup
-
-			for _, it := range items {
-				wg.Add(1)
-				go func(item uploadItem) {
-					defer wg.Done()
-					res, uErr := fileUC.UploadEncryptedImage(c.Request.Context(), userID, deviceID, item.filename, item.data, targetFolderID)
-					resultChan <- uploadResult{res: res, err: uErr}
-				}(it)
-			}
-
-			wg.Wait()
-			close(resultChan)
-
-			var uploaded []*dto.EncryptedImageUploadResponse
-			for r := range resultChan {
-				if r.err != nil {
-					errMsgs = append(errMsgs, r.err.Error())
-				} else if r.res != nil {
-					uploaded = append(uploaded, r.res)
-				}
+				uploaded = append(uploaded, res)
 			}
 
 			if len(uploaded) == 0 {
@@ -506,13 +481,24 @@ func RegisterFileGinRoutes(r *gin.Engine, fileUC *usecase.FileUseCase, authMiddl
 				return
 			}
 
-			decryptedBytes, contentType, err := fileUC.DownloadAndDecryptImage(c.Request.Context(), userID, deviceID, fileID)
+			// ?variant=thumb serves the small preview object for gallery tiles.
+			var media *usecase.DecryptedMedia
+			if c.Query("variant") == "thumb" {
+				media, err = fileUC.OpenDecryptedThumbnail(c.Request.Context(), userID, deviceID, fileID)
+			} else {
+				media, err = fileUC.OpenDecryptedMedia(c.Request.Context(), userID, deviceID, fileID)
+			}
 			if err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				status := http.StatusBadRequest
+				if errors.Is(err, domain.ErrThumbnailNotFound) || errors.Is(err, domain.ErrFileNotFound) {
+					status = http.StatusNotFound
+				}
+				c.JSON(status, gin.H{"error": err.Error()})
 				return
 			}
+			defer media.Close()
 
-			serveMediaContent(c.Writer, c.Request, decryptedBytes, contentType)
+			serveMediaContent(c.Writer, c.Request, media.Content, media.ContentType)
 		})
 	}
 }

@@ -1,16 +1,19 @@
 package usecase
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"log"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"vaultly-be/internal/application/dto"
-	"vaultly-be/internal/domain"
 	"vaultly-be/internal/domain/entity"
 	"vaultly-be/internal/domain/repository"
 	"vaultly-be/internal/domain/service"
@@ -21,6 +24,7 @@ type FileUseCase struct {
 	deviceRepo repository.DeviceRepository
 	storage    service.ObjectStorage
 	crypto     service.EncryptionService
+	thumbnails service.Thumbnailer
 }
 
 func NewFileUseCase(
@@ -28,12 +32,14 @@ func NewFileUseCase(
 	deviceRepo repository.DeviceRepository,
 	storage service.ObjectStorage,
 	crypto service.EncryptionService,
+	thumbnails service.Thumbnailer,
 ) *FileUseCase {
 	return &FileUseCase{
 		fileRepo:   fileRepo,
 		deviceRepo: deviceRepo,
 		storage:    storage,
 		crypto:     crypto,
+		thumbnails: thumbnails,
 	}
 }
 
@@ -224,11 +230,14 @@ func (uc *FileUseCase) DeleteFile(ctx context.Context, userID, fileID uuid.UUID)
 
 // UploadEncryptedImage handles direct server-side image encryption & storage upload:
 // 1. Validates image magic bytes (JPEG/PNG/WebP/GIF)
-// 2. Generates 256-bit AES File Key and 96-bit GCM Nonce
+// 2. Generates a 256-bit File Key
 // 3. Encrypts image bytes via EncryptionService
 // 4. Stores encrypted ciphertext into Object Storage
 // 5. Wraps key for active user devices
 // 6. Creates File record with status 'ready'
+//
+// It buffers the whole payload, so it is only for the small Base64 JSON endpoint
+// and tests; multipart uploads go through UploadEncryptedStream.
 func (uc *FileUseCase) UploadEncryptedImage(
 	ctx context.Context,
 	userID uuid.UUID,
@@ -237,17 +246,61 @@ func (uc *FileUseCase) UploadEncryptedImage(
 	rawImage []byte,
 	folderID ...*uuid.UUID,
 ) (*dto.EncryptedImageUploadResponse, error) {
-	if len(rawImage) == 0 {
-		return nil, domain.ErrInvalidImage
-	}
-
 	var targetFolderID *uuid.UUID
 	if len(folderID) > 0 {
 		targetFolderID = folderID[0]
 	}
+	return uc.UploadEncryptedStream(ctx, userID, deviceID, fileName, bytes.NewReader(rawImage), func() (service.ReadSeekCloser, error) {
+		return readSeekNopCloser{bytes.NewReader(rawImage)}, nil
+	}, targetFolderID)
+}
 
-	// 1. Validate image format
-	detectedMime, err := uc.crypto.ValidateImage(rawImage)
+// readSeekNopCloser adapts an in-memory reader to the replay contract.
+type readSeekNopCloser struct{ io.ReadSeeker }
+
+func (readSeekNopCloser) Close() error { return nil }
+
+// countingReader tracks how many plaintext bytes were read so the upload can
+// report and store the plaintext size without trusting the client.
+type countingReader struct {
+	r io.Reader
+	n int64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	return n, err
+}
+
+// maxThumbnailSourceBytes bounds the plaintext the thumbnailer is asked to
+// decode; larger uploads are videos or oversized stills and just skip it.
+const maxThumbnailSourceBytes int64 = 25 << 20
+
+// UploadEncryptedStream validates, encrypts and stores a media stream of any size.
+//
+// Nothing is buffered in memory: the ciphertext is spooled to a temporary file
+// so the storage client gets an exact length and a seekable body (the segmented
+// encryption writes its header last). replay, when not nil, re-opens the same
+// plaintext for the thumbnail pass.
+func (uc *FileUseCase) UploadEncryptedStream(
+	ctx context.Context,
+	userID uuid.UUID,
+	deviceID *uuid.UUID,
+	fileName string,
+	src io.Reader,
+	replay func() (service.ReadSeekCloser, error),
+	targetFolderID *uuid.UUID,
+) (*dto.EncryptedImageUploadResponse, error) {
+	// 1. Validate the format from the magic bytes, then keep them for encryption.
+	head := make([]byte, 512)
+	headN, err := io.ReadFull(src, head)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return nil, fmt.Errorf("failed to read upload: %w", err)
+	}
+	head = head[:headN]
+
+	detectedMime, err := uc.crypto.ValidateImage(head)
 	if err != nil {
 		return nil, err
 	}
@@ -258,10 +311,28 @@ func (uc *FileUseCase) UploadEncryptedImage(
 		return nil, fmt.Errorf("failed to generate encryption File Key: %w", err)
 	}
 
-	// 3. Encrypt the raw image via libsodium crypto_secretstream_xchacha20poly1305
-	ciphertext, header, err := uc.crypto.EncryptBytes(rawImage, fileKey)
+	// 3. Encrypt the stream as independent segments so a later range request only
+	// has to read one segment.
+	// shortcut: the ciphertext is spooled to a temp file because the S3 client
+	// needs a known content length and a seekable body; swap for a streamed
+	// multipart upload if temp disk becomes the bottleneck.
+	tmp, err := os.CreateTemp("", "vaultly-upload-*")
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate upload buffer: %w", err)
+	}
+	defer func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
+	}()
+
+	plainSize, streamHeader, err := uc.crypto.EncryptSegmentedStream(io.MultiReader(bytes.NewReader(head), src), tmp, fileKey)
 	if err != nil {
 		return nil, fmt.Errorf("encryption error: %w", err)
+	}
+
+	cipherSize, err := tmp.Seek(0, io.SeekEnd)
+	if err != nil {
+		return nil, fmt.Errorf("failed to size encrypted upload: %w", err)
 	}
 
 	fileID := uuid.New()
@@ -270,35 +341,46 @@ func (uc *FileUseCase) UploadEncryptedImage(
 		cleanName = fileID.String()
 	}
 	objectKey := fmt.Sprintf("%s/%s_%s", userID.String(), fileID.String(), cleanName)
-	headerHex := hex.EncodeToString(header)
-	keyHex := hex.EncodeToString(fileKey)
-	combinedNonce := fmt.Sprintf("%s:%s", headerHex, keyHex)
 
-	// 4. Put ciphertext directly to storage
-	if err := uc.storage.PutObject(ctx, objectKey, ciphertext, "application/octet-stream"); err != nil {
+	// The nonce column keeps the "header:key" shape older clients parse: the first
+	// segment's stream header plus the file key shared by every segment.
+	combinedNonce := fmt.Sprintf("%s:%s", hex.EncodeToString(streamHeader), hex.EncodeToString(fileKey))
+
+	// 4. Stream the ciphertext into storage
+	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("failed to rewind encrypted upload: %w", err)
+	}
+	if err := uc.storage.PutObjectReader(ctx, objectKey, tmp, cipherSize, "application/octet-stream"); err != nil {
 		return nil, fmt.Errorf("storage error: %w", err)
 	}
 
-	// 5. Create database record
+	// 5. Best-effort preview so galleries never pull the full-resolution object.
+	thumbKey := uc.storeThumbnail(ctx, objectKey, detectedMime, plainSize, fileKey, replay)
+
+	// 6. Create database record (Size is the plaintext size, like InitUpload)
 	fileEntity := entity.File{
-		ID:          fileID,
-		UserID:      userID,
-		FolderID:    targetFolderID,
-		R2ObjectKey: objectKey,
-		Size:        int64(len(ciphertext)),
-		ContentType: detectedMime,
-		Nonce:       combinedNonce,
-		Status:      entity.FileStatusReady,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		ID:             fileID,
+		UserID:         userID,
+		FolderID:       targetFolderID,
+		R2ObjectKey:    objectKey,
+		R2ThumbnailKey: thumbKey,
+		Size:           plainSize,
+		ContentType:    detectedMime,
+		Nonce:          combinedNonce,
+		Status:         entity.FileStatusReady,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
 	}
 
 	if err := uc.fileRepo.Create(ctx, &fileEntity); err != nil {
 		_ = uc.storage.DeleteObject(ctx, objectKey)
+		if thumbKey != "" {
+			_ = uc.storage.DeleteObject(ctx, thumbKey)
+		}
 		return nil, fmt.Errorf("failed to save encrypted file metadata: %w", err)
 	}
 
-	// 6. Wrap File Key for all authorized devices using crypto_box_seal (X25519)
+	// 7. Wrap File Key for all authorized devices using crypto_box_seal (X25519)
 	devices, err := uc.deviceRepo.ListByUserID(ctx, userID)
 	if err == nil && len(devices) > 0 {
 		var fileKeys []entity.FileKey
@@ -332,106 +414,61 @@ func (uc *FileUseCase) UploadEncryptedImage(
 		FileID:      fileID,
 		FileName:    fileName,
 		ContentType: detectedMime,
-		CipherSize:  int64(len(ciphertext)),
-		PlainSize:   int64(len(rawImage)),
-		Nonce:       headerHex,
+		CipherSize:  cipherSize,
+		PlainSize:   plainSize,
+		Nonce:       hex.EncodeToString(streamHeader),
 		ObjectKey:   objectKey,
 		Message:     "Media successfully validated, chunk-encrypted with crypto_secretstream_xchacha20poly1305, and stored",
 	}, nil
 }
 
-// DownloadAndDecryptImage fetches encrypted ciphertext from storage and decrypts
-// using libsodium crypto_secretstream_xchacha20poly1305
-func (uc *FileUseCase) DownloadAndDecryptImage(
+// storeThumbnail re-reads the plaintext, builds a small JPEG preview, encrypts it
+// with the file key under a fresh secretstream header, and stores it next to the
+// original. It returns the thumbnail object key, or "" when there is none.
+func (uc *FileUseCase) storeThumbnail(
 	ctx context.Context,
-	userID uuid.UUID,
-	deviceID *uuid.UUID,
-	fileID uuid.UUID,
-	devicePrivKeyHex ...string,
-) ([]byte, string, error) {
-	file, err := uc.fileRepo.GetReadyByID(ctx, fileID, userID)
+	objectKey string,
+	mimeType string,
+	plainSize int64,
+	fileKey []byte,
+	replay func() (service.ReadSeekCloser, error),
+) string {
+	if uc.thumbnails == nil || replay == nil || plainSize <= 0 || plainSize > maxThumbnailSourceBytes {
+		return ""
+	}
+	if !strings.HasPrefix(mimeType, "image/") {
+		return "" // videos need a decoder this service does not ship
+	}
+
+	src, err := replay()
 	if err != nil {
-		return nil, "", err
+		log.Printf("thumbnail skipped for %s: %v", objectKey, err)
+		return ""
 	}
+	defer src.Close()
 
-	var rawKey []byte
-	privKey := ""
-	if len(devicePrivKeyHex) > 0 {
-		privKey = devicePrivKeyHex[0]
-	}
-
-	// Try unwrapping for requesting device
-	if deviceID != nil {
-		fk, err := uc.fileRepo.GetFileKey(ctx, fileID, *deviceID)
-		if err == nil {
-			if privKey != "" {
-				dev, devErr := uc.deviceRepo.GetByID(ctx, *deviceID)
-				if devErr == nil {
-					rawKey, _ = uc.crypto.UnwrapKeyForDevice(fk.WrappedKey, dev.PublicKey, privKey)
-				}
-			}
-			if len(rawKey) == 0 {
-				// Raw fallback
-				k, _ := hex.DecodeString(fk.WrappedKey)
-				if len(k) == 32 {
-					rawKey = k
-				}
-			}
-		}
-	}
-
-	// Fallback check all user devices
-	if len(rawKey) == 0 {
-		devices, _ := uc.deviceRepo.ListByUserID(ctx, userID)
-		for _, dev := range devices {
-			fk, err := uc.fileRepo.GetFileKey(ctx, fileID, dev.ID)
-			if err == nil {
-				if privKey != "" {
-					k, err := uc.crypto.UnwrapKeyForDevice(fk.WrappedKey, dev.PublicKey, privKey)
-					if err == nil && len(k) == 32 {
-						rawKey = k
-						break
-					}
-				}
-				k, _ := hex.DecodeString(fk.WrappedKey)
-				if len(k) == 32 {
-					rawKey = k
-					break
-				}
-			}
-		}
-	}
-
-	// Fallback check if key was stored in file.Nonce (format: headerHex:keyHex or keyHex)
-	if len(rawKey) == 0 && file.Nonce != "" {
-		parts := strings.Split(file.Nonce, ":")
-		if len(parts) >= 2 {
-			if k, err := hex.DecodeString(parts[1]); err == nil && len(k) == 32 {
-				rawKey = k
-			}
-		} else if len(parts) == 1 {
-			if k, err := hex.DecodeString(parts[0]); err == nil && len(k) == 32 {
-				rawKey = k
-			}
-		}
-	}
-
-	if len(rawKey) != 32 {
-		return nil, "", domain.ErrDeviceUnauthorized
-	}
-
-	// Download ciphertext from storage
-	ciphertext, _, err := uc.storage.GetObject(ctx, file.R2ObjectKey)
+	jpegData, err := uc.thumbnails.Generate(src)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to retrieve encrypted file from storage: %w", err)
+		log.Printf("thumbnail skipped for %s: %v", objectKey, err)
+		return ""
+	}
+	if len(jpegData) == 0 {
+		return ""
 	}
 
-	plaintext, err := uc.crypto.DecryptBytes(ciphertext, rawKey)
+	// A fresh random header per object keeps the shared file key safe.
+	cipher, _, err := uc.crypto.EncryptBytes(jpegData, fileKey)
 	if err != nil {
-		return nil, "", err
+		log.Printf("thumbnail encryption failed for %s: %v", objectKey, err)
+		return ""
 	}
 
-	return plaintext, file.ContentType, nil
+	thumbKey := objectKey + "_thumb"
+	if err := uc.storage.PutObjectReader(ctx, thumbKey, bytes.NewReader(cipher), int64(len(cipher)), "application/octet-stream"); err != nil {
+		log.Printf("thumbnail upload failed for %s: %v", objectKey, err)
+		return ""
+	}
+	return thumbKey
 }
 
 func idOrNil(id uuid.UUID) uuid.UUID {
@@ -475,4 +512,3 @@ func (uc *FileUseCase) BatchDeleteFiles(ctx context.Context, userID uuid.UUID, f
 	}
 	return deleted, errMsgs
 }
-
