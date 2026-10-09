@@ -474,6 +474,14 @@ class ApiService {
 
     // The backend decrypts and streams the image at `/files/{id}/view`.
     final viewUrl = '$_baseUrl/files/$fileId/view?token=$_token';
+    // Galleries only need the small preview; a full-resolution photo is fetched
+    // when the user opens it. Files uploaded before thumbnails existed fall back
+    // to the full-size stream.
+    final hasThumbnail =
+        (item['r2_thumbnail_key']?.toString() ?? '').isNotEmpty;
+    final thumbUrl = hasThumbnail
+        ? '$_baseUrl/files/$fileId/view?variant=thumb&token=$_token'
+        : viewUrl;
 
     final isVid = cleanTitle.toLowerCase().endsWith('.mp4') ||
         cleanTitle.toLowerCase().endsWith('.mov') ||
@@ -489,7 +497,7 @@ class ApiService {
       id: fileId,
       folderId: fId,
       title: cleanTitle,
-      thumbnailUrl: viewUrl,
+      thumbnailUrl: thumbUrl,
       fullUrl: viewUrl,
       createdAt: createdAt,
       fileSize: _formatBytes(sizeBytes),
