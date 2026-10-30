@@ -142,7 +142,7 @@ void main() {
         ));
         await tester.pumpAndSettle();
 
-        expect(find.text('Vaultly'), findsWidgets);
+        expect(find.text('VAULTLY'), findsWidgets);
         expect(find.text('5'), findsOneWidget);
         expect(find.text('Đăng nhập bằng mật khẩu'), findsOneWidget);
       });

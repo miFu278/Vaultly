@@ -47,12 +47,28 @@ void main() {
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getString('vaultly_vault_pin'), isNull);
   });
-  test('logout clears session and PIN state', () async {    final api = ApiService();
+  test('logout clears session and PIN state', () async {
+    final api = ApiService();
     await api.setPin('654321');
     expect(api.hasPin, isTrue);
 
     await api.logout();
     expect(api.hasPin, isFalse);
     expect(api.isAuthenticated, isFalse);
+  });
+
+  test('custom folder cover persistence', () async {
+    final api = ApiService();
+    var covers = await api.loadFolderCustomCovers();
+    expect(covers.isEmpty, isTrue);
+
+    await api.setFolderCustomCover('folder_vacation', 'photo_123');
+    covers = await api.loadFolderCustomCovers();
+    expect(covers['folder_vacation'], 'photo_123');
+
+    // Resetting clears the custom cover
+    await api.setFolderCustomCover('folder_vacation', null);
+    covers = await api.loadFolderCustomCovers();
+    expect(covers.containsKey('folder_vacation'), isFalse);
   });
 }

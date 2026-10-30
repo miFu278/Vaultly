@@ -11,6 +11,8 @@ class AlbumsView extends StatelessWidget {
   final Map<String, List<PhotoItem>> photosByAlbum;
   final ValueChanged<Folder> onOpen;
   final ValueChanged<Folder> onDelete;
+  final ValueChanged<Folder>? onChooseCover;
+  final ValueChanged<Folder>? onResetCover;
   final VoidCallback onCreate;
 
   const AlbumsView({
@@ -19,6 +21,8 @@ class AlbumsView extends StatelessWidget {
     required this.photosByAlbum,
     required this.onOpen,
     required this.onDelete,
+    this.onChooseCover,
+    this.onResetCover,
     required this.onCreate,
   });
 
@@ -108,6 +112,12 @@ class AlbumsView extends StatelessWidget {
                         photos: photosByAlbum[album.id] ?? const [],
                         onTap: () => onOpen(album),
                         onDelete: () => onDelete(album),
+                        onChooseCover: onChooseCover != null
+                            ? () => onChooseCover!(album)
+                            : null,
+                        onResetCover: onResetCover != null
+                            ? () => onResetCover!(album)
+                            : null,
                       );
                     },
                     childCount: albums.length,

@@ -5,13 +5,20 @@ import 'flat.dart';
 
 /// Plays an E2EE video stream served by `GET /files/{id}/view`.
 ///
-/// Controls sit *below* the video, never on top of it: on Flutter web the
-/// `<video>` element is a platform view that composites above the Flutter
-/// canvas, so an overlaid control would be invisible there.
+/// Supports completely immersive fullscreen playback. When [showControls] is false,
+/// no chrome or headers obstruct the video. Controls overlay gently at the bottom
+/// when requested and hide with a tap.
 class VideoPlayerView extends StatefulWidget {
   final String url;
+  final bool showControls;
+  final VoidCallback? onTap;
 
-  const VideoPlayerView({super.key, required this.url});
+  const VideoPlayerView({
+    super.key,
+    required this.url,
+    this.showControls = true,
+    this.onTap,
+  });
 
   @override
   State<VideoPlayerView> createState() => _VideoPlayerViewState();
@@ -69,6 +76,8 @@ class _VideoPlayerViewState extends State<VideoPlayerView> {
     try {
       await controller.initialize();
       if (!mounted || _controller != controller) return;
+      // Auto play video when ready
+      controller.play();
       setState(() => _initializing = false);
     } catch (_) {
       if (!mounted || _controller != controller) return;
@@ -127,53 +136,63 @@ class _VideoPlayerViewState extends State<VideoPlayerView> {
     final aspectRatio =
         controller.value.aspectRatio > 0 ? controller.value.aspectRatio : 16 / 9;
 
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Expanded(
-          child: Center(
-            child: Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: colors.mediaCanvas,
-                borderRadius: AppRadii.md,
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: AspectRatio(
-                aspectRatio: aspectRatio,
-                child: ClipRRect(
-                  borderRadius: AppRadii.xs,
-                  child: GestureDetector(
-                    onTap: _togglePlay,
-                    child: ValueListenableBuilder<VideoPlayerValue>(
-                      valueListenable: controller,
-                      builder: (context, value, _) => Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          VideoPlayer(controller),
-                          if (value.isBuffering)
-                            Center(
-                              child: SizedBox(
-                                width: 28,
-                                height: 28,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: colors.foreground,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: widget.onTap ?? _togglePlay,
+      child: Stack(
+        fit: StackFit.expand,
+        alignment: Alignment.center,
+        children: [
+          // Edge-to-edge centered video player (pure fullscreen)
+          Center(
+            child: AspectRatio(
+              aspectRatio: aspectRatio,
+              child: VideoPlayer(controller),
+            ),
+          ),
+
+          // Buffering spinner
+          ValueListenableBuilder<VideoPlayerValue>(
+            valueListenable: controller,
+            builder: (context, value, _) {
+              if (!value.isBuffering) return const SizedBox.shrink();
+              return Center(
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: Colors.white,
                     ),
                   ),
                 ),
+              );
+            },
+          ),
+
+          // Floating video controls overlay: fades with showControls
+          Positioned(
+            left: AppSpacing.lg,
+            right: AppSpacing.lg,
+            bottom: MediaQuery.of(context).padding.bottom + 80,
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOut,
+              opacity: widget.showControls ? 1.0 : 0.0,
+              child: IgnorePointer(
+                ignoring: !widget.showControls,
+                child: _buildControls(colors, controller),
               ),
             ),
           ),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        _buildControls(colors, controller),
-      ],
+        ],
+      ),
     );
   }
 
@@ -255,13 +274,19 @@ class _VideoPlayerViewState extends State<VideoPlayerView> {
         final positionMs =
             position.inMilliseconds.clamp(0, totalMs < 0 ? 0 : totalMs);
 
-        return SurfaceCard(
-          radius: AppRadii.rMd,
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.sm,
-            AppSpacing.xs,
-            AppSpacing.md,
-            AppSpacing.xs,
+        return Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: AppSpacing.xs,
+          ),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.78),
+            borderRadius: AppRadii.pill,
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.15),
+              width: 1,
+            ),
+            boxShadow: AppElevation.floating(colors),
           ),
           child: Row(
             children: [
@@ -270,29 +295,31 @@ class _VideoPlayerViewState extends State<VideoPlayerView> {
                     ? Icons.pause_rounded
                     : Icons.play_arrow_rounded,
                 tooltip: value.isPlaying ? 'Tạm dừng' : 'Phát',
-                size: 40,
+                size: 38,
+                filled: true,
                 bordered: false,
                 onPressed: _togglePlay,
               ),
+              const SizedBox(width: AppSpacing.xs),
               Text(
                 _format(position),
                 style: AppTypography.caption.copyWith(
-                  color: colors.foregroundMuted,
+                  color: Colors.white,
                   fontFeatures: AppTypography.tabularFigures,
                 ),
               ),
               Expanded(
                 child: SliderTheme(
                   data: SliderThemeData(
-                    trackHeight: 4,
-                    activeTrackColor: colors.foreground,
-                    inactiveTrackColor: colors.border,
-                    thumbColor: colors.foreground,
-                    overlayColor: colors.foreground.withValues(alpha: 0.08),
+                    trackHeight: 3,
+                    activeTrackColor: colors.primary,
+                    inactiveTrackColor: Colors.white.withValues(alpha: 0.24),
+                    thumbColor: Colors.white,
+                    overlayColor: colors.primary.withValues(alpha: 0.20),
                     thumbShape:
-                        const RoundSliderThumbShape(enabledThumbRadius: 7),
+                        const RoundSliderThumbShape(enabledThumbRadius: 6),
                     overlayShape:
-                        const RoundSliderOverlayShape(overlayRadius: 16),
+                        const RoundSliderOverlayShape(overlayRadius: 14),
                   ),
                   child: Slider(
                     value: positionMs.toDouble(),
@@ -313,10 +340,11 @@ class _VideoPlayerViewState extends State<VideoPlayerView> {
               Text(
                 _format(duration),
                 style: AppTypography.caption.copyWith(
-                  color: colors.foregroundMuted,
+                  color: Colors.white70,
                   fontFeatures: AppTypography.tabularFigures,
                 ),
               ),
+              const SizedBox(width: AppSpacing.sm),
             ],
           ),
         );

@@ -7,6 +7,7 @@ class Folder {
   final bool isSecure;
   final int photoCount;
   final String? coverUrl;
+  final String? customCoverPhotoId;
 
   const Folder({
     required this.id,
@@ -15,6 +16,7 @@ class Folder {
     this.isSecure = false,
     this.photoCount = 0,
     this.coverUrl,
+    this.customCoverPhotoId,
   });
 
   Folder copyWith({
@@ -24,6 +26,8 @@ class Folder {
     bool? isSecure,
     int? photoCount,
     String? coverUrl,
+    String? customCoverPhotoId,
+    bool clearCustomCover = false,
   }) {
     return Folder(
       id: id ?? this.id,
@@ -32,6 +36,9 @@ class Folder {
       isSecure: isSecure ?? this.isSecure,
       photoCount: photoCount ?? this.photoCount,
       coverUrl: coverUrl ?? this.coverUrl,
+      customCoverPhotoId: clearCustomCover
+          ? null
+          : (customCoverPhotoId ?? this.customCoverPhotoId),
     );
   }
 }

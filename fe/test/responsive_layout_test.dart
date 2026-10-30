@@ -155,4 +155,15 @@ void main() {
     expect(find.byType(PageView), findsOneWidget);
     expect(find.byTooltip('Trở về'), findsOneWidget);
   });
+
+  testWidgets('Files tab renders files with full thumbnail images',
+      (WidgetTester tester) async {
+    await _start(tester, size: const Size(1024, 900));
+
+    await tester.tap(find.text('Tệp').first);
+    await tester.pumpAndSettle();
+
+    // Verify files list renders with Image.network for thumbnails
+    expect(find.byType(Image), findsWidgets);
+  });
 }

@@ -58,7 +58,7 @@ class _VaultlyAppState extends State<VaultlyApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Vaultly - Secure Photos Vault',
+      title: 'VAULTLY - Secure Photos Vault',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,

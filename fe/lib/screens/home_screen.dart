@@ -8,6 +8,7 @@ import '../models/storage_usage.dart';
 import '../services/api_service.dart';
 import '../theme/app_tokens.dart';
 import '../widgets/flat.dart';
+import '../widgets/photo_tile.dart';
 import 'albums_view.dart';
 import 'auth_screen.dart';
 import 'files_view.dart';
@@ -62,6 +63,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   StorageUsage _storage = StorageUsage.empty;
   MediaFilter _filter = MediaFilter.all;
   String _searchQuery = '';
+  Map<String, String> _customFolderCovers = {};
 
   @override
   void initState() {
@@ -97,6 +99,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       setState(() {
         _isApiConnected = isHealthy;
       });
+    }
+
+    // Load any user-chosen folder cover photos from local preferences
+    _customFolderCovers = await _api.loadFolderCustomCovers();
+    if (mounted) {
+      _refreshFolderCounts();
     }
 
     if (!_api.isAuthenticated) return;
@@ -197,16 +205,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _api.fetchFolders(),
         _api.fetchFiles(),
         _api.fetchStorage(),
+        _api.loadFolderCustomCovers(),
       ]);
       final folders = results[1] as List<Folder>;
       final allPhotos = results[2] as List<PhotoItem>;
       final storage = results[3] as StorageUsage?;
+      final covers = results[4] as Map<String, String>?;
 
       if (!mounted) return;
 
       setState(() {
         _storage = storage ?? StorageUsage.empty;
         _photos = allPhotos;
+        if (covers != null) _customFolderCovers = covers;
         _folders = _buildFoldersWithCounts(folders, allPhotos);
         if (!_folders.any((f) => f.id == _selectedFolderId)) {
           _selectedFolderId = 'all';
@@ -235,6 +246,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     List<PhotoItem> photos,
   ) {
     PhotoItem? coverFor(String folderId) {
+      // 1. If user set a custom cover photo for this folder, find and use it
+      final customPhotoId = _customFolderCovers[folderId];
+      if (customPhotoId != null) {
+        for (final photo in photos) {
+          if (photo.id == customPhotoId) return photo;
+        }
+      }
+      // 2. Otherwise default to the most recent photo in that folder
       for (final photo in photos) {
         if (photo.folderId == folderId) return photo;
       }
@@ -256,6 +275,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         folder.copyWith(
           photoCount: countFor(folder.id),
           coverUrl: coverFor(folder.id)?.thumbnailUrl,
+          customCoverPhotoId: _customFolderCovers[folder.id],
         ),
     ];
   }
@@ -466,6 +486,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 },
               ),
               SheetAction(
+                icon: Icons.photo_size_select_actual_outlined,
+                title: 'Đặt làm ảnh bìa album',
+                onTap: () {
+                  Navigator.pop(sheetCtx);
+                  _chooseAlbumForPhotoCover(photo);
+                },
+              ),
+              SheetAction(
                 icon: Icons.delete_outline_rounded,
                 title: 'Xóa khỏi Vault',
                 danger: true,
@@ -536,7 +564,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         icon: Icons.delete_outline_rounded,
         title: 'Xóa $count mục đã chọn?',
         message:
-            'Các tệp đã chọn sẽ bị xóa vĩnh viễn khỏi Vaultly. Hành động này không thể hoàn tác.',
+            'Các tệp đã chọn sẽ bị xóa vĩnh viễn khỏi VAULTLY. Hành động này không thể hoàn tác.',
         actions: [
           PillButton(
             label: 'Huỷ',
@@ -699,6 +727,147 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     } finally {
       if (mounted) setState(() => _isLoadingApi = false);
     }
+  }
+
+  void _showPickCoverSheet(Folder folder) {
+    final folderPhotos = _photos.where((p) => p.folderId == folder.id).toList();
+    if (folderPhotos.isEmpty) {
+      _showSnackBar('Album chưa có ảnh để chọn làm ảnh bìa.');
+      return;
+    }
+    final colors = AppColors.of(context);
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: colors.surface,
+      elevation: 0,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadii.rXl)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  0,
+                  AppSpacing.lg,
+                  AppSpacing.sm,
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.photo_size_select_actual_outlined,
+                        size: 20, color: colors.foreground),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: Text(
+                        'Chọn ảnh bìa cho "${folder.name}"',
+                        style: AppTypography.heading.copyWith(
+                          color: colors.foreground,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 320),
+                child: GridView.builder(
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    mainAxisSpacing: 6,
+                    crossAxisSpacing: 6,
+                  ),
+                  itemCount: folderPhotos.length,
+                  itemBuilder: (context, i) {
+                    final photo = folderPhotos[i];
+                    final isCurrent = folder.customCoverPhotoId == photo.id ||
+                        (folder.customCoverPhotoId == null && i == 0);
+                    return PhotoTile(
+                      photo: photo,
+                      selected: isCurrent,
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        await _setFolderCover(folder.id, photo.id, folder.name);
+                      },
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _setFolderCover(String folderId, String photoId, String folderName) async {
+    await _api.setFolderCustomCover(folderId, photoId);
+    setState(() {
+      _customFolderCovers[folderId] = photoId;
+      _refreshFolderCounts();
+    });
+    _showSnackBar('Đã đặt ảnh bìa cho album "$folderName"');
+  }
+
+  Future<void> _resetFolderCover(Folder folder) async {
+    await _api.setFolderCustomCover(folder.id, null);
+    setState(() {
+      _customFolderCovers.remove(folder.id);
+      _refreshFolderCounts();
+    });
+    _showSnackBar('Đã đặt lại ảnh bìa gần đây nhất cho "${folder.name}"');
+  }
+
+  void _chooseAlbumForPhotoCover(PhotoItem photo) {
+    final availableAlbums = _albums;
+    if (availableAlbums.isEmpty) {
+      _showSnackBar('Chưa có album nào để đặt ảnh bìa.');
+      return;
+    }
+    final currentAlbum = availableAlbums.where((a) => a.id == photo.folderId).firstOrNull;
+    if (currentAlbum != null) {
+      _setFolderCover(currentAlbum.id, photo.id, currentAlbum.name);
+      return;
+    }
+    showDialog(
+      context: context,
+      builder: (ctx) => AppDialog(
+        icon: Icons.photo_size_select_actual_outlined,
+        title: 'Chọn album đặt làm ảnh bìa',
+        body: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 280),
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: availableAlbums.length,
+            itemBuilder: (context, i) {
+              final album = availableAlbums[i];
+              return SheetAction(
+                icon: album.icon,
+                title: album.name,
+                subtitle: '${album.photoCount} mục',
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _setFolderCover(album.id, photo.id, album.name);
+                },
+              );
+            },
+          ),
+        ),
+        actions: [
+          PillButton(
+            label: 'Huỷ',
+            onPressed: () => Navigator.pop(ctx),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _confirmDeleteFolder(Folder folder) async {
@@ -991,7 +1160,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         if (!mounted) return;
 
         if (uploaded > 0) {
-          _showSnackBar('Đã tải thành công $uploaded/$total tệp lên Vaultly!');
+          _showSnackBar('Đã tải thành công $uploaded/$total tệp lên VAULTLY!');
           await _loadApiData();
         } else {
           _showSnackBar('Lỗi tải tệp: ${errors.join(', ')}', isError: true);
@@ -1018,7 +1187,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _isApiConnected = false;
       _tabIndex = 0;
     });
-    _showSnackBar('Đã đăng xuất khỏi Vaultly');
+    _showSnackBar('Đã đăng xuất khỏi VAULTLY');
   }
 
   // --- Shell chrome ---
@@ -1112,6 +1281,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           photosByAlbum: _photosByAlbum,
           onOpen: _onSelectFolder,
           onDelete: _confirmDeleteFolder,
+          onChooseCover: _showPickCoverSheet,
+          onResetCover: _resetFolderCover,
           onCreate: _showCreateFolderDialog,
         );
       case 3:
@@ -1177,7 +1348,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       2 => 'Album',
       3 => 'Tệp',
       4 => 'Cài đặt',
-      _ => 'Thư viện',
+      _ => 'VAULTLY',
     };
 
     return Padding(
@@ -1206,7 +1377,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  _tabIndex == 1 ? _currentFolder.name : title,
+                  _tabIndex == 1 ? (_currentFolder.id == 'all' ? 'VAULTLY' : _currentFolder.name) : title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppTypography.titleLg.copyWith(
@@ -1379,9 +1550,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 const SizedBox(width: AppSpacing.sm + 2),
                 Expanded(
                   child: Text(
-                    'Vaultly',
+                    'VAULTLY',
                     style: AppTypography.brand.copyWith(
                       color: colors.foreground,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.8,
                     ),
                   ),
                 ),

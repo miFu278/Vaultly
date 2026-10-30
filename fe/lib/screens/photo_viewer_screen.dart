@@ -20,14 +20,9 @@ class PhotoViewerScreen extends StatefulWidget {
 }
 
 class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
-  /// Filmstrip overlay metrics, also used to keep page content clear of it.
+  /// Filmstrip overlay metrics.
   static const double _filmstripHeight = 52;
   static const double _filmstripItemSize = 48;
-
-  static double _filmstripReserve(BuildContext context) =>
-      _filmstripHeight +
-      AppSpacing.md * 2 +
-      MediaQuery.of(context).padding.bottom;
 
   late int _currentIndex;
   late PageController _pageController;
@@ -39,6 +34,11 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
     super.initState();
     _currentIndex = widget.initialIndex.clamp(0, widget.photos.length - 1);
     _pageController = PageController(initialPage: _currentIndex);
+    // If the opened media is a video, start with chrome hidden for an immediate
+    // immersive fullscreen experience.
+    if (widget.photos[_currentIndex].checkIsVideo) {
+      _showChrome = false;
+    }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollToThumbnail(_currentIndex, animate: false);
@@ -206,18 +206,12 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
               itemBuilder: (context, index) {
                 final photo = widget.photos[index];
 
-                // Video plays through its own controls; a tap toggles playback
-                // instead of the image-viewer chrome.
+                // Video plays in edge-to-edge fullscreen; a tap toggles the chrome and controls.
                 if (photo.checkIsVideo) {
-                  return Padding(
-                    padding: EdgeInsets.only(
-                      top: MediaQuery.of(context).padding.top +
-                          kToolbarHeight,
-                      bottom: _filmstripReserve(context),
-                      left: AppSpacing.lg,
-                      right: AppSpacing.lg,
-                    ),
-                    child: VideoPlayerView(url: photo.fullUrl),
+                  return VideoPlayerView(
+                    url: photo.fullUrl,
+                    showControls: _showChrome,
+                    onTap: _toggleChrome,
                   );
                 }
 

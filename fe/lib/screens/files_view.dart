@@ -41,9 +41,11 @@ class FilesView extends StatelessWidget {
                 size: 14, color: colors.foregroundMuted),
             const SizedBox(width: AppSpacing.xs + 2),
             Text(
-              'Vaultly',
+              'VAULTLY',
               style: AppTypography.caption.copyWith(
                 color: colors.foregroundMuted,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.5,
               ),
             ),
             Icon(Icons.chevron_right_rounded,
@@ -94,7 +96,7 @@ class FilesView extends StatelessWidget {
                     onOptions: () => onFileOptions(recent[i]),
                   ),
                   if (i != recent.length - 1)
-                    Divider(height: 1, color: colors.border, indent: 68),
+                    Divider(height: 1, color: colors.border, indent: 76),
                 ],
               ],
             ),
@@ -138,58 +140,71 @@ class _FolderRow extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.md,
-          vertical: AppSpacing.sm + 2,
+          vertical: AppSpacing.sm,
         ),
         child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: colors.primarySoft,
+          children: [
+            ClipRRect(
               borderRadius: AppRadii.sm,
+              child: SizedBox(
+                width: 52,
+                height: 52,
+                child: folder.coverUrl != null && folder.coverUrl!.isNotEmpty
+                    ? Image.network(
+                        folder.coverUrl!,
+                        fit: BoxFit.cover,
+                        cacheWidth: 160,
+                        filterQuality: FilterQuality.low,
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          color: colors.primarySoft,
+                          child: Icon(folder.icon, size: 24, color: colors.primary),
+                        ),
+                      )
+                    : Container(
+                        color: colors.primarySoft,
+                        child: Icon(folder.icon, size: 24, color: colors.primary),
+                      ),
+              ),
             ),
-            child: Icon(folder.icon, size: 20, color: colors.primary),
-          ),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        folder.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.label.copyWith(
-                          color: colors.foreground,
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          folder.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.label.copyWith(
+                            color: colors.foreground,
+                          ),
                         ),
                       ),
-                    ),
-                    if (folder.isSecure) ...[
-                      const SizedBox(width: AppSpacing.xs + 2),
-                      Icon(Icons.lock_outline_rounded,
-                          size: 13, color: colors.success),
+                      if (folder.isSecure) ...[
+                        const SizedBox(width: AppSpacing.xs + 2),
+                        Icon(Icons.lock_outline_rounded,
+                            size: 13, color: colors.success),
+                      ],
                     ],
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '${folder.photoCount} mục',
-                  style: AppTypography.caption.copyWith(
-                    color: colors.foregroundMuted,
-                    fontFeatures: AppTypography.tabularFigures,
                   ),
-                ),
-              ],
+                  const SizedBox(height: 2),
+                  Text(
+                    '${folder.photoCount} mục',
+                    style: AppTypography.caption.copyWith(
+                      color: colors.foregroundMuted,
+                      fontFeatures: AppTypography.tabularFigures,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          Icon(Icons.chevron_right_rounded,
-              size: 20, color: colors.foregroundMuted),
-        ],
+            Icon(Icons.chevron_right_rounded,
+                size: 20, color: colors.foregroundMuted),
+          ],
         ),
       ),
     );
@@ -211,33 +226,58 @@ class _FileRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
     final isVideo = photo.checkIsVideo;
-    final tint = isVideo ? colors.danger : colors.primary;
-    final label = isVideo
-        ? 'VID'
-        : (photo.displayTitle.toLowerCase().endsWith('.png') ? 'PNG' : 'JPG');
 
     return InkWell(
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.md,
-          vertical: AppSpacing.sm + 2,
+          vertical: AppSpacing.sm,
         ),
         child: Row(
           children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: tint.withValues(alpha: colors.isDark ? 0.20 : 0.10),
-                borderRadius: AppRadii.sm,
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                label,
-                style: AppTypography.micro.copyWith(
-                  color: tint,
-                  fontWeight: FontWeight.w700,
+            ClipRRect(
+              borderRadius: AppRadii.sm,
+              child: SizedBox(
+                width: 52,
+                height: 52,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Image.network(
+                      photo.thumbnailUrl,
+                      fit: BoxFit.cover,
+                      cacheWidth: 160,
+                      filterQuality: FilterQuality.low,
+                      errorBuilder: (context, error, stackTrace) => ColoredBox(
+                        color: colors.surfaceMuted,
+                        child: Icon(
+                          isVideo
+                              ? Icons.videocam_outlined
+                              : Icons.image_outlined,
+                          size: 24,
+                          color: colors.foregroundMuted,
+                        ),
+                      ),
+                    ),
+                    if (isVideo)
+                      Positioned(
+                        right: 4,
+                        bottom: 4,
+                        child: Container(
+                          padding: const EdgeInsets.all(3),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.65),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.play_arrow_rounded,
+                            size: 12,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ),
@@ -257,7 +297,7 @@ class _FileRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '${photo.fileSize} • ${_formatDate(photo.createdAt)}',
+                    '${photo.fileSize} • ${_formatDate(photo.createdAt)} • ${isVideo ? 'Video' : 'Ảnh'}',
                     style: AppTypography.caption.copyWith(
                       color: colors.foregroundMuted,
                       fontFeatures: AppTypography.tabularFigures,

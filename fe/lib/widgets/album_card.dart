@@ -5,13 +5,15 @@ import '../theme/app_tokens.dart';
 import 'photo_tile.dart';
 import 'tiles.dart';
 
-/// Album card in the shape of a folder: cover collage, name, item count and the
-/// overflow menu. Used by the Albums grid and the overview shelf.
+/// Album card in the shape of a folder: cover image (custom or latest photo),
+/// name, item count and the overflow menu.
 class AlbumFolderCard extends StatelessWidget {
   final Folder album;
   final List<PhotoItem> photos;
   final VoidCallback onTap;
   final VoidCallback? onDelete;
+  final VoidCallback? onChooseCover;
+  final VoidCallback? onResetCover;
 
   const AlbumFolderCard({
     super.key,
@@ -19,12 +21,13 @@ class AlbumFolderCard extends StatelessWidget {
     required this.photos,
     required this.onTap,
     this.onDelete,
+    this.onChooseCover,
+    this.onResetCover,
   });
 
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
-    final covers = photos.take(4).toList();
 
     return FolderCard(
       onTap: onTap,
@@ -38,8 +41,8 @@ class AlbumFolderCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  _CoverCollage(
-                    covers: covers,
+                  _AlbumCover(
+                    coverUrl: album.coverUrl,
                     fallbackIcon: album.icon,
                   ),
                   if (album.isSecure)
@@ -57,6 +60,36 @@ class AlbumFolderCard extends StatelessWidget {
                           Icons.lock_outline_rounded,
                           size: 12,
                           color: colors.foreground,
+                        ),
+                      ),
+                    ),
+                  if (album.customCoverPhotoId != null)
+                    Positioned(
+                      right: 6,
+                      top: 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: colors.primary.withValues(alpha: 0.88),
+                          borderRadius: AppRadii.pill,
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.star_rounded, size: 10, color: Colors.white),
+                            SizedBox(width: 2),
+                            Text(
+                              'Bìa',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -91,7 +124,7 @@ class AlbumFolderCard extends StatelessWidget {
                   ],
                 ),
               ),
-              if (onDelete != null)
+              if (onDelete != null || onChooseCover != null || onResetCover != null)
                 PopupMenuButton<String>(
                   tooltip: 'Tùy chọn album',
                   padding: EdgeInsets.zero,
@@ -101,10 +134,44 @@ class AlbumFolderCard extends StatelessWidget {
                     color: colors.foregroundMuted,
                   ),
                   onSelected: (value) {
-                    if (value == 'delete') onDelete!();
+                    if (value == 'delete') onDelete?.call();
+                    if (value == 'choose_cover') onChooseCover?.call();
+                    if (value == 'reset_cover') onResetCover?.call();
                   },
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(value: 'delete', child: Text('Xoá album')),
+                  itemBuilder: (context) => [
+                    if (onChooseCover != null && photos.isNotEmpty)
+                      const PopupMenuItem(
+                        value: 'choose_cover',
+                        child: Row(
+                          children: [
+                            Icon(Icons.photo_size_select_actual_outlined, size: 16),
+                            SizedBox(width: 8),
+                            Text('Chọn ảnh bìa'),
+                          ],
+                        ),
+                      ),
+                    if (onResetCover != null && album.customCoverPhotoId != null)
+                      const PopupMenuItem(
+                        value: 'reset_cover',
+                        child: Row(
+                          children: [
+                            Icon(Icons.restore_rounded, size: 16),
+                            SizedBox(width: 8),
+                            Text('Dùng ảnh mới nhất'),
+                          ],
+                        ),
+                      ),
+                    if (onDelete != null)
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete_outline_rounded, size: 16, color: Colors.red),
+                            SizedBox(width: 8),
+                            Text('Xoá album', style: TextStyle(color: Colors.red)),
+                          ],
+                        ),
+                      ),
                   ],
                 ),
             ],
@@ -115,75 +182,39 @@ class AlbumFolderCard extends StatelessWidget {
   }
 }
 
-/// One cover fills the tile; two to four covers form a 2x2 collage.
-class _CoverCollage extends StatelessWidget {
-  final List<PhotoItem> covers;
+class _AlbumCover extends StatelessWidget {
+  final String? coverUrl;
   final IconData fallbackIcon;
 
-  const _CoverCollage({required this.covers, required this.fallbackIcon});
+  const _AlbumCover({required this.coverUrl, required this.fallbackIcon});
 
   @override
   Widget build(BuildContext context) {
-    if (covers.isEmpty) {
-      return FolderTileArt(icon: fallbackIcon, iconSize: 26);
-    }
-    if (covers.length == 1) {
-      return _cover(context, covers.first);
+    final colors = AppColors.of(context);
+    if (coverUrl == null || coverUrl!.isEmpty) {
+      return FolderTileArt(icon: fallbackIcon, iconSize: 28);
     }
 
-    return Column(
-      children: [
-        for (var row = 0; row < 2; row++)
-          Expanded(
-            child: Row(
-              children: [
-                for (var column = 0; column < 2; column++)
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.all(1),
-                      child: _coverOrBlank(
-                        context,
-                        row * 2 + column < covers.length
-                            ? covers[row * 2 + column]
-                            : null,
-                      ),
-                    ),
-                  ),
-              ],
+    return Image.network(
+      coverUrl!,
+      fit: BoxFit.cover,
+      cacheWidth: 400,
+      filterQuality: FilterQuality.low,
+      errorBuilder: (context, error, stackTrace) =>
+          FolderTileArt(icon: fallbackIcon, iconSize: 28),
+      loadingBuilder: (context, child, progress) {
+        if (progress == null) return child;
+        return ColoredBox(
+          color: colors.surfaceMuted,
+          child: const Center(
+            child: SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
             ),
           ),
-      ],
-    );
-  }
-
-  Widget _coverOrBlank(BuildContext context, PhotoItem? photo) {
-    if (photo == null) return const ColoredBox(color: Color(0x0A000000));
-    return _cover(context, photo);
-  }
-
-  Widget _cover(BuildContext context, PhotoItem photo) {
-    final colors = AppColors.of(context);
-    if (photo.checkIsVideo) {
-      return ColoredBox(
-        color: colors.surfaceMuted,
-        child: Icon(
-          Icons.play_arrow_rounded,
-          size: 26,
-          color: colors.foregroundMuted,
-        ),
-      );
-    }
-    return Image.network(
-      photo.thumbnailUrl,
-      fit: BoxFit.cover,
-      errorBuilder: (context, error, stackTrace) => ColoredBox(
-        color: colors.surfaceMuted,
-        child: Icon(
-          Icons.image_outlined,
-          size: 22,
-          color: colors.foregroundMuted,
-        ),
-      ),
+        );
+      },
     );
   }
 }

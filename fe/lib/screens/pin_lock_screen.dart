@@ -145,7 +145,7 @@ class _PinLockScreenState extends State<PinLockScreen>
   }
 
   String get _title {
-    if (widget.mode == PinLockMode.unlock) return 'Vaultly';
+    if (widget.mode == PinLockMode.unlock) return 'VAULTLY';
     return _isConfirming ? 'Xác nhận mã PIN' : 'Tạo mã PIN';
   }
 

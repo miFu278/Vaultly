@@ -129,10 +129,12 @@ class _AuthScreenState extends State<AuthScreen> {
                     ),
                     const SizedBox(height: AppSpacing.lg),
                     Text(
-                      'Vaultly',
+                      'VAULTLY',
                       textAlign: TextAlign.center,
                       style: AppTypography.titleLg.copyWith(
                         color: colors.foreground,
+                        letterSpacing: 0.8,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
                     const SizedBox(height: AppSpacing.xs),

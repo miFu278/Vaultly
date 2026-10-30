@@ -66,8 +66,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   const VaultMark(size: 36),
                   const SizedBox(width: AppSpacing.sm + 2),
                   Text(
-                    'Vaultly',
-                    style: AppTypography.brand.copyWith(color: colors.foreground),
+                    'VAULTLY',
+                    style: AppTypography.brand.copyWith(
+                      color: colors.foreground,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.8,
+                    ),
                   ),
                   const Spacer(),
                   TextButton(

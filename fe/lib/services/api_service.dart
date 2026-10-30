@@ -47,6 +47,7 @@ class ApiService {
   static const String _kPinKey = 'vaultly_vault_pin';
   static const String _kHasPinKey = 'vaultly_has_server_pin';
   static const String _kOnboardingKey = 'vaultly_onboarding_done';
+  static const String _kFolderCoversPrefix = 'vaultly_folder_cover_';
 
   // Timeout for PIN lock (15 minutes)
   static const int kPinTimeoutMinutes = 15;
@@ -377,6 +378,33 @@ class ApiService {
   Future<void> completeOnboarding() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_kOnboardingKey, true);
+  }
+
+  /// Get the map of custom cover photo IDs chosen by the user for each folder.
+  Future<Map<String, String>> loadFolderCustomCovers() async {
+    final prefs = await SharedPreferences.getInstance();
+    final Map<String, String> covers = {};
+    for (final key in prefs.getKeys()) {
+      if (key.startsWith(_kFolderCoversPrefix)) {
+        final folderId = key.substring(_kFolderCoversPrefix.length);
+        final photoId = prefs.getString(key);
+        if (photoId != null && photoId.isNotEmpty) {
+          covers[folderId] = photoId;
+        }
+      }
+    }
+    return covers;
+  }
+
+  /// Set or clear a user-chosen custom cover photo for a folder.
+  Future<void> setFolderCustomCover(String folderId, String? photoId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = '$_kFolderCoversPrefix$folderId';
+    if (photoId == null || photoId.isEmpty) {
+      await prefs.remove(key);
+    } else {
+      await prefs.setString(key, photoId);
+    }
   }
 
   /// Vault usage and quota for the signed-in account. Returns null when the
