@@ -306,7 +306,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         ),
                         decoration: const InputDecoration(
                           labelText: 'API Base URL',
-                          hintText: 'https://vaultly-ghqy.onrender.com',
+                          hintText: 'https://api-vaultly.mpdev.tech',
                         ),
                       ),
                     ],

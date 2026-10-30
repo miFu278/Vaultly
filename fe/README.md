@@ -134,7 +134,7 @@ curl -s https://vaultly-ct9.pages.dev/main.dart.js | md5sum        # phải trù
 npx -y wrangler@4 pages deployment list --project-name=vaultly     # xem Environment / Commit
 ```
 
-Đổi API backend khi build (mặc định `https://vaultly-ghqy.onrender.com`):
+Đổi API backend khi build (mặc định `https://api-vaultly.mpdev.tech`):
 
 ```bash
 flutter build web --release --dart-define=API_BASE_URL=https://api.example.com
@@ -192,4 +192,5 @@ APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner.bat | sort -V | tail -1)
 
 - **Google Play**: Play Console → tạo app → upload file `.aab` (nên test ở kênh *Internal testing* trước) → điền Data safety (app lưu ảnh/video lên server, có đăng nhập). Play App Signing sẽ giữ app signing key riêng, keystore ở trên chỉ là upload key.
 - **Cài trực tiếp / tester**: gửi file APK universal hoặc `arm64-v8a` (hầu hết điện thoại hiện nay); máy cài lần đầu phải bật "Cài đặt từ nguồn không xác định".
-- API backend lấy mặc định `https://vaultly-ghqy.onrender.com`, muốn trỏ nơi khác thì build kèm `--dart-define=API_BASE_URL=https://...` (hoặc đổi trong màn hình đăng nhập).
+- API backend lấy mặc định `https://api-vaultly.mpdev.tech`, muốn trỏ nơi khác thì build kèm `--dart-define=API_BASE_URL=https://...` (hoặc đổi trong màn hình đăng nhập).
+- Host tự nhập được lưu vào `vaultly_base_url_v2`; giá trị mặc định thì không lưu, nên bản build đổi host mới không bị giá trị cũ che mất.

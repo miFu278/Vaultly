@@ -200,9 +200,9 @@ curl -s https://<API_DOMAIN>/health
 
 ### 6. Release production (Render, phương án cũ)
 
-Backend production: **https://vaultly-ghqy.onrender.com** (đây cũng là `API_BASE_URL` mặc định của FE).
-
-Cấu hình trên Render:
+Backend production hiện chạy trên VPS: **https://api-vaultly.mpdev.tech** (xem
+`DEPLOY_VPS.md`), và đây cũng là `API_BASE_URL` mặc định của FE. Render vẫn dùng
+được như phương án dự phòng, cấu hình như dưới đây.
 
 | Mục | Giá trị |
 |---|---|
@@ -218,7 +218,7 @@ Khuyến nghị cho instance nhỏ (512 MB RAM):
 
 - `MAX_UPLOAD_MB=200` — chặn theo **temp disk** (plaintext multipart spool + ciphertext tạm ≈ 2× file), không phải RAM.
 - `GOMEMLIMIT=384MiB` — mặc định code đã tự đặt heap = 80% giới hạn cgroup; đặt biến này chỉ khi muốn override.
-- Kiểm tra `R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY` có thật sự được set: thiếu credential thì server rơi vào storage trong bộ nhớ (giới hạn 64 MB, log `WARNING`), dữ liệu mất khi restart.
+- `ENV=production` sẽ từ chối khởi động nếu thiếu `JWT_SECRET` thật hoặc credential R2, nên lỗi cấu hình lộ ra ngay chứ không âm thầm chạy bằng storage trong bộ nhớ.
 
 Sau khi push `main`, Render tự deploy nếu project có bật auto-deploy; deploy FE trước BE cũng an toàn (`?variant=thumb` chỉ là tham số tuỳ chọn).
 

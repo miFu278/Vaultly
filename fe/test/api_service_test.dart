@@ -18,6 +18,19 @@ void main() {
     expect(const ApiException(400, 'bad').toString(), 'bad');
   });
 
+  test('default API host is the VPS, and only overrides are persisted', () {
+    expect(ApiService.defaultBaseUrl, 'https://api-vaultly.mpdev.tech');
+    expect(ApiService().baseUrl, ApiService.defaultBaseUrl);
+
+    // The shipped default is not an override, with or without a trailing slash.
+    expect(ApiService.isCustomBaseUrl(ApiService.defaultBaseUrl), isFalse);
+    expect(
+      ApiService.isCustomBaseUrl('https://api-vaultly.mpdev.tech/'),
+      isFalse,
+    );
+    expect(ApiService.isCustomBaseUrl('https://staging.example.com'), isTrue);
+  });
+
   test('PIN lifecycle: set, verify, reject wrong PIN', () async {
     final api = ApiService();
     expect(api.hasPin, isFalse);

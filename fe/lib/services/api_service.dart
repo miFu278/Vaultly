@@ -37,7 +37,10 @@ class ApiService {
   factory ApiService() => _instance;
   ApiService._internal();
 
-  static const String _kBaseUrlKey = 'vaultly_base_url';
+  // Versioned: the value stored under the old key pointed at the previous
+  // default host, and it would otherwise override the new one forever.
+  static const String _kBaseUrlKey = 'vaultly_base_url_v2';
+  static const String _kLegacyBaseUrlKey = 'vaultly_base_url';
   static const String _kTokenKey = 'vaultly_jwt_token';
   static const String _kEmailKey = 'vaultly_user_email';
   static const String _kUserIdKey = 'vaultly_user_id';
@@ -48,16 +51,30 @@ class ApiService {
   // Timeout for PIN lock (15 minutes)
   static const int kPinTimeoutMinutes = 15;
 
-  // Configurable base URL (Production Render API)
-  String _baseUrl = const String.fromEnvironment(
+  /// Host the app talks to when nobody overrides it at build time.
+  static const String defaultBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://vaultly-ghqy.onrender.com',
+    defaultValue: 'https://api-vaultly.mpdev.tech',
   );
+
+  String _baseUrl = defaultBaseUrl;
   String get baseUrl => _baseUrl;
+
+  /// Stores an override, but never pins the default: a build that ships a new
+  /// default host must not be shadowed by the value saved last session.
   set baseUrl(String url) {
     _baseUrl = url.replaceAll(RegExp(r'/+$'), '');
-    _persistBaseUrl(_baseUrl);
+    if (isCustomBaseUrl(_baseUrl)) {
+      _persistBaseUrl(_baseUrl);
+    } else {
+      _clearPersistedBaseUrl();
+    }
   }
+
+  /// True when [url] is an override worth storing. The shipped default is never
+  /// persisted, so a build with a new default is not shadowed by an old value.
+  static bool isCustomBaseUrl(String url) =>
+      url.replaceAll(RegExp(r'/+$'), '') != defaultBaseUrl;
 
   String? _token;
   String? _userEmail;
@@ -98,6 +115,9 @@ class ApiService {
       if (savedUrl != null && savedUrl.isNotEmpty) {
         _baseUrl = savedUrl;
       }
+      // The pre-v2 key held whatever host the old build used; drop it so it
+      // cannot come back.
+      await prefs.remove(_kLegacyBaseUrlKey);
       _token = prefs.getString(_kTokenKey);
       _userEmail = prefs.getString(_kEmailKey);
       _userId = prefs.getString(_kUserIdKey);
@@ -114,6 +134,11 @@ class ApiService {
   Future<void> _persistBaseUrl(String url) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kBaseUrlKey, url);
+  }
+
+  Future<void> _clearPersistedBaseUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kBaseUrlKey);
   }
 
   Future<void> _saveSession(
