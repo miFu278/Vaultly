@@ -44,11 +44,14 @@ func main() {
 	}
 	defer db.Close()
 
-	// Auto-run initial migrations if file exists
-	if _, err := os.Stat("migrations/001_initial_schema.up.sql"); err == nil {
-		if migErr := db.RunMigrations("migrations/001_initial_schema.up.sql"); migErr != nil {
-			log.Printf("Migration notice: %v", migErr)
+	// The schema has to match the code before the server takes traffic. Serving
+	// with a half-applied schema turns into 500s much later, so production stops
+	// here instead of logging a notice and carrying on.
+	if err := runSchemaMigration(cfg, db); err != nil {
+		if cfg.IsProduction() {
+			log.Fatalf("schema migration failed: %v", err)
 		}
+		log.Printf("WARNING: schema migration failed (continuing in development): %v", err)
 	}
 
 	// 3. Initialize Infrastructure Adapters
@@ -146,4 +149,15 @@ func main() {
 	}
 
 	log.Println("Server exited properly")
+}
+
+// runSchemaMigration applies the idempotent schema file. The file has to ship
+// next to the binary (the Docker image copies it), so a missing file is an error
+// rather than a silently skipped step.
+func runSchemaMigration(cfg *config.Config, db *database.DB) error {
+	const path = "migrations/001_initial_schema.up.sql"
+	if _, err := os.Stat(path); err != nil {
+		return fmt.Errorf("migration file %s not found: %w", path, err)
+	}
+	return db.RunMigrations(path)
 }

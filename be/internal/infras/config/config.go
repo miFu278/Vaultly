@@ -94,6 +94,9 @@ func (c *Config) validate() error {
 	return nil
 }
 
+// IsProduction reports whether the server runs with production safeguards.
+func (c *Config) IsProduction() bool { return c.Env == "production" }
+
 // MaxUploadBytes is the configured per-request upload cap in bytes.
 func (c *Config) MaxUploadBytes() int64 {
 	if c.MaxUploadMB <= 0 {
