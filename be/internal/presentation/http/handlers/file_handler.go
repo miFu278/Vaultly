@@ -429,7 +429,7 @@ func RegisterFileGinRoutes(r *gin.Engine, fileUC *usecase.FileUseCase, authMiddl
 			form, err := c.MultipartForm()
 			if tooLarge(err) {
 				c.JSON(http.StatusRequestEntityTooLarge, gin.H{
-					"error": fmt.Sprintf("Tá»‡p quÃ¡ lá»›n, giá»›i háº¡n %dMB má»—i tá»‡p", limit>>20),
+					"error": fmt.Sprintf("Tệp quá lớn, giới hạn %dMB mỗi tệp", limit>>20),
 				})
 				return
 			}
@@ -452,6 +452,7 @@ func RegisterFileGinRoutes(r *gin.Engine, fileUC *usecase.FileUseCase, authMiddl
 			}
 
 			if len(fileHeaders) == 0 {
+				_ = c.Error(errors.New("no media part in the multipart body"))
 				c.JSON(http.StatusBadRequest, gin.H{"error": "At least one media file ('file' or 'files') is required"})
 				return
 			}
@@ -526,6 +527,9 @@ func RegisterFileGinRoutes(r *gin.Engine, fileUC *usecase.FileUseCase, authMiddl
 				media, err = fileUC.OpenDecryptedMedia(c.Request.Context(), userID, deviceID, fileID)
 			}
 			if err != nil {
+				// The request log prints this reason, so a broken read names its
+				// cause instead of a bare 400.
+				_ = c.Error(err)
 				status := http.StatusBadRequest
 				if errors.Is(err, domain.ErrThumbnailNotFound) || errors.Is(err, domain.ErrFileNotFound) {
 					status = http.StatusNotFound
