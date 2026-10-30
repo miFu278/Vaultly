@@ -1,0 +1,33 @@
+# Caddy obtains and renews the certificate for API_DOMAIN automatically.
+# Point an A record (and AAAA if the VPS has IPv6) at this host before starting.
+{$API_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	# Largest single upload the API will accept, plus multipart overhead.
+	# Keep MAX_UPLOAD_MB in .env.prod comfortably below this.
+	request_body {
+		max_size 600MB
+	}
+
+	reverse_proxy api:8080 {
+		# Media is streamed while the server decrypts it; do not buffer the
+		# response or video playback waits for the whole file.
+		flush_interval -1
+		transport http {
+			read_timeout 15m
+			write_timeout 15m
+		}
+	}
+
+	log {
+		output stderr
+		format console
+	}
+}

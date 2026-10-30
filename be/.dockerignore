@@ -1,0 +1,13 @@
+# Keep the build context small and never bake secrets into the image.
+.env
+.env.*
+!.env.prod.example
+*.md
+.git
+.gitignore
+docker-compose*.yml
+Dockerfile
+.dockerignore
+Caddyfile
+server
+*.exe

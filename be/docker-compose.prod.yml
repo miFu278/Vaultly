@@ -1,0 +1,59 @@
+name: vaultly
+
+# VPS deployment: API container behind Caddy, which terminates TLS.
+#
+# Postgres lives on Supabase and objects on Cloudflare R2, so this file only
+# runs the Go server plus the reverse proxy. Point DATABASE_URL at the Supabase
+# pooler and keep the R2 credentials in .env.prod.
+#
+#   cp .env.prod.example .env.prod   # fill it in
+#   docker compose -f docker-compose.prod.yml up -d --build
+
+services:
+  api:
+    build:
+      context: .
+      args:
+        GO_VERSION: "${GO_VERSION:-1.27}"
+    image: vaultly-api:latest
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    environment:
+      # Hard override: the image must never run with the development defaults.
+      ENV: production
+      PORT: "8080"
+    expose:
+      - "8080"
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      API_DOMAIN: "${API_DOMAIN:?set API_DOMAIN in .env.prod}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  caddy_data:
+  caddy_config:

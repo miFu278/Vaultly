@@ -110,10 +110,10 @@ Toàn bộ luồng media đều **streaming**, không buffer cả file vào RAM:
 
 ### Định dạng object chia segment (O(1) seek)
 
-Object mới (`VLTYSEG1`) được chia thành các segment **độc lập**, mỗi segment 1 MiB plaintext (segment cuối nhỏ hơn) và có header secretstream riêng:
+Object mới (`VLTYSEG2`) được chia thành các segment **độc lập**, mỗi segment 1 MiB plaintext (segment cuối nhỏ hơn) và có header secretstream riêng. Mỗi segment dùng khóa riêng suy ra từ file key và **vị trí segment** (`HMAC-SHA256`), nên đảo hay nhân bản segment sẽ hỏng xác thực thay vì giải mã ra nội dung sai:
 
 ```text
-[8B magic "VLTYSEG1"][u64 plaintextSize][u32 segmentPlainSize][segment 0][segment 1]...
+[8B magic "VLTYSEG2"][u64 plaintextSize][u32 segmentPlainSize][segment 0][segment 1]...
 ```
 
 Vì mọi segment (trừ segment cuối) đều đúng bằng `segmentPlainSize`, offset ciphertext của segment thứ *i* tính được trong O(1) — không cần bảng index, không phải đọc trước object. Hệ quả:
@@ -121,6 +121,7 @@ Vì mọi segment (trừ segment cuối) đều đúng bằng `segmentPlainSize`
 - **Tua video = 1 range GET**: player đọc `moov` ở cuối file chỉ tải segment cuối, không giải mã cả video → mở video nhanh thay vì chờ giải mã từ đầu.
 - **RAM không đổi theo kích thước file**: luôn giữ 1 chunk 64 KB, bất kể video 500 MB.
 - Segment cũ (định dạng cũ, 1 secretstream duy nhất) vẫn đọc được: reader tự nhận diện qua magic và coi cả object là 1 segment.
+- Object `VLTYSEG1` (segment dùng chung file key) vẫn đọc được bình thường; chỉ object mới ghi ra `VLTYSEG2`.
 - Mỗi segment dùng cùng file key nhưng **header random riêng**, nên không tái sử dụng keystream.
 - Client muốn giải mã cục bộ cần hỗ trợ định dạng này; `nonce` trong DB vẫn giữ dạng `headerHex:keyHex` như trước.
 
@@ -173,6 +174,54 @@ go run ./cmd/server/main.go
 
 Server sẽ lắng nghe tại `http://localhost:8080`.
 
+### 5. Deploy lên VPS (khuyến nghị)
+
+Postgres dùng Supabase, object dùng Cloudflare R2, VPS chỉ chạy API trong Docker và
+Caddy giữ TLS. Toàn bộ file cần thiết đã có trong `be/`:
+
+| File | Việc |
+|---|---|
+| `Dockerfile` | build tĩnh (`CGO_ENABLED=0`), runtime Alpine, chạy user 10001, healthcheck `/health` |
+| `docker-compose.prod.yml` | service `api` + `caddy`, không có Postgres |
+| `Caddyfile` | TLS tự động, giới hạn body 600MB, `flush_interval -1` để stream video |
+| `.env.prod.example` | mẫu biến môi trường, chép thành `.env.prod` |
+| `DEPLOY_VPS.md` | các bước chi tiết, backup và xử lý sự cố |
+
+Tóm tắt:
+
+```bash
+cd be
+cp .env.prod.example .env.prod    # điền API_DOMAIN, JWT_SECRET, DATABASE_URL, R2_*
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+curl -s https://<API_DOMAIN>/health
+```
+
+`--env-file` là bắt buộc vì compose cần `${API_DOMAIN}` để dựng Caddyfile.
+
+### 6. Release production (Render, phương án cũ)
+
+Backend production: **https://vaultly-ghqy.onrender.com** (đây cũng là `API_BASE_URL` mặc định của FE).
+
+Cấu hình trên Render:
+
+| Mục | Giá trị |
+|---|---|
+| Root directory | `be` |
+| Build command | `go build -o server ./cmd/server` |
+| Start command | `./server` (đọc cổng từ `$PORT`) |
+
+Schema `migrations/001_initial_schema.up.sql` tự chạy lúc khởi động (idempotent, `CREATE ... IF NOT EXISTS`).
+
+Biến môi trường cần đặt (xem `.env.example`): `ENV=production`, `DATABASE_URL` (Supabase), `JWT_SECRET`, `JWT_EXPIRATION_HOURS`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `R2_ENDPOINT`, `PRESIGNED_URL_EXPIRATION_MINUTES`, `MAX_UPLOAD_MB`.
+
+Khuyến nghị cho instance nhỏ (512 MB RAM):
+
+- `MAX_UPLOAD_MB=200` — chặn theo **temp disk** (plaintext multipart spool + ciphertext tạm ≈ 2× file), không phải RAM.
+- `GOMEMLIMIT=384MiB` — mặc định code đã tự đặt heap = 80% giới hạn cgroup; đặt biến này chỉ khi muốn override.
+- Kiểm tra `R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY` có thật sự được set: thiếu credential thì server rơi vào storage trong bộ nhớ (giới hạn 64 MB, log `WARNING`), dữ liệu mất khi restart.
+
+Sau khi push `main`, Render tự deploy nếu project có bật auto-deploy; deploy FE trước BE cũng an toàn (`?variant=thumb` chỉ là tham số tuỳ chọn).
+
 ---
 
 ## 📖 Trực quan hóa & Test API trực tiếp (Huma + Scalar)
@@ -201,6 +250,7 @@ Server sẽ lắng nghe tại `http://localhost:8080`.
 - `POST /files/init` — Tạo presigned PUT URLs cho cả full-res và thumbnail
 - `POST /files/{id}/complete` — Báo upload xong và lưu wrapped keys cho từng device
 - `GET /files` — Danh sách tất cả file metadata
+- `GET /storage` — Dung lượng đã dùng (tổng, ảnh, video, số tệp) và hạn mức của tài khoản (`users.storage_quota_bytes`, mặc định 2 GiB)
 - `GET /files/{id}/download` — Lấy presigned GET URL ảnh full-res + wrapped key
 - `GET /files/{id}/thumbnail` — **Lấy presigned GET URL cho thumbnail (dành cho client tự giải mã)**
 - `DELETE /files/{id}` — Xóa file metadata và ciphertext khỏi storage
