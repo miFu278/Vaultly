@@ -91,8 +91,7 @@ hướng cộng thêm (`ADD COLUMN IF NOT EXISTS`), vì mỗi lần khởi độ
 ## 6. Vận hành
 
 - Log: `docker compose ... logs -f api`. Log request chỉ ghi path, không ghi query,
-  nên token media không lọt vào log.
-- Đĩa: `df -h`. Upload lớn để lại file tạm trong `$TMPDIR` của container; nếu đầy,
+  nên token media không lọt vào log.- Đĩa: `df -h`. Upload lớn để lại file tạm trong `$TMPDIR` của container; nếu đầy,
   upload trả 500. Dọn bằng cách restart container.
 - RAM: container bị OOM thì hạ `MAX_UPLOAD_MB` và `GOMEMLIMIT`, không phải tăng
   worker.
@@ -100,7 +99,47 @@ hướng cộng thêm (`ADD COLUMN IF NOT EXISTS`), vì mỗi lần khởi độ
   ngày hoặc PITR). VPS mất thì dựng lại từ hai nguồn này, không cần backup VPS.
 - Đổi `JWT_SECRET` sẽ đăng xuất toàn bộ thiết bị. Đó cũng là cách thu hồi khẩn cấp.
 
-## 7. Sự cố
+## 7. Xem log
+
+Chạy trong thư mục `be/` trên VPS, nơi có `docker-compose.prod.yml`:
+
+```bash
+# theo dõi trực tiếp, 200 dòng gần nhất
+docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f --tail 200 api
+
+# log của Caddy: truy cập và lỗi cấp chứng chỉ TLS
+docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f caddy
+
+# 30 phút gần nhất, có dấu thời gian
+docker compose --env-file .env.prod -f docker-compose.prod.yml logs --since 30m -t api
+```
+
+Tên container là `vaultly-api-1` và `vaultly-caddy-1`, nên `docker logs -f vaultly-api-1`
+cũng tương đương khi đã ở đúng máy.
+
+Log của API gồm: cấu hình lúc khởi động, kết quả migration, dòng `listening on`,
+mỗi request dạng `GET /files/<id>/view 206 42ms`, và cảnh báo như
+`WARNING: R2 credentials are not configured`. Định dạng này không có IP, muốn xem
+IP thì đọc log Caddy: `docker compose ... logs caddy | grep '/files/'`.
+
+Lọc nhanh:
+
+```bash
+# chỉ request lỗi 5xx
+... logs --since 2h api | grep -E ' 5[0-9]{2} '
+
+# lỗi khởi động: thiếu biến, DB không kết nối được, migration hỏng
+... logs --since 1h api | grep -E 'Failed|refusing|migration|error'
+
+# request chậm hơn 1 giây
+... logs --since 2h api | grep -E '[0-9]+(\.[0-9]+)?s$'
+```
+
+Lưu ý: log xoay vòng 10MB × 3 file mỗi container, tự mất khi vượt. Cần lịch sử
+lâu hơn thì phải đẩy log ra ngoài (ví dụ `docker logs` vào Loki hoặc gửi lên một
+aggregator), VPS không tự giữ.
+
+## 8. Sự cố
 
 | Triệu chứng | Nguyên nhân thường gặp |
 |---|---|
@@ -112,7 +151,7 @@ hướng cộng thêm (`ADD COLUMN IF NOT EXISTS`), vì mỗi lần khởi độ
 | Mọi request 401 sau khi deploy | `JWT_SECRET` khác lần trước |
 | Log `WARNING: R2 credentials are not configured` | chạy ngoài `ENV=production` mà thiếu key; dữ liệu chỉ nằm trong RAM |
 
-## 8. Điều cần biết về mô hình bảo mật
+## 9. Điều cần biết về mô hình bảo mật
 
 Server giữ khoá giải mã trong cột `nonce` và giải mã hộ khi trả ảnh, nên VPS và
 Supabase đều nằm trong vùng tin cậy. Hãy coi chúng như máy chủ chứa dữ liệu thật:
