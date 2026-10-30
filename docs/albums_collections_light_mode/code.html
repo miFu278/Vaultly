@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><meta content="mobile_tab" name="shell-type"/><title>Vault - Cloud Storage</title><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600&amp;family=Plus+Jakarta+Sans:wght@400;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { "colors": { "surface-container-low": "#eff4ff", "secondary": "#9d4300", "on-background": "#0b1c30", "on-secondary-container": "#5c2400", "tertiary-fixed": "#6ffbbe", "outline": "#737686", "on-secondary": "#ffffff", "primary-container": "#2563eb", "tertiary": "#006242", "on-secondary-fixed": "#341100", "surface-container-lowest": "#ffffff", "primary-fixed": "#dbe1ff", "inverse-surface": "#213145", "on-tertiary-fixed": "#002113", "on-tertiary-container": "#bdffdb", "secondary-fixed": "#ffdbca", "on-tertiary": "#ffffff", "surface-tint": "#0053db", "background": "#f8f9ff", "primary-fixed-dim": "#b4c5ff", "surface-container-high": "#dce9ff", "on-error": "#ffffff", "surface-variant": "#d3e4fe", "on-surface-variant": "#434655", "surface-container-highest": "#d3e4fe", "inverse-primary": "#b4c5ff", "on-error-container": "#93000a", "secondary-container": "#fd761a", "error-container": "#ffdad6", "error": "#ba1a1a", "secondary-fixed-dim": "#ffb690", "inverse-on-surface": "#eaf1ff", "surface": "#f8f9ff", "on-secondary-fixed-variant": "#783200", "tertiary-fixed-dim": "#4edea3", "outline-variant": "#c3c6d7", "on-primary-fixed-variant": "#003ea8", "tertiary-container": "#007d55", "surface-container": "#e5eeff", "on-primary-container": "#eeefff", "on-primary": "#ffffff", "surface-dim": "#cbdbf5", "on-surface": "#0b1c30", "primary": "#004ac6", "surface-bright": "#f8f9ff", "on-tertiary-fixed-variant": "#005236", "on-primary-fixed": "#00174b" }, "borderRadius": { "DEFAULT": "1rem", "lg": "2rem", "xl": "3rem", "full": "9999px" }, "spacing": { "space-sm": "0.5rem", "space-xs": "0.25rem", "gutter": "1rem", "space-md": "1rem", "space-lg": "1.5rem", "margin": "1.25rem", "space-xl": "2rem" }, "fontFamily": { "headline-xl-mobile": ["Plus Jakarta Sans"], "headline-md": ["Plus Jakarta Sans"], "label-sm": ["Inter"], "label-lg": ["Inter"], "label-md": ["Inter"], "body-lg": ["Plus Jakarta Sans"], "body-md": ["Plus Jakarta Sans"], "headline-xl": ["Plus Jakarta Sans"], "body-sm": ["Plus Jakarta Sans"], "headline-sm": ["Plus Jakarta Sans"], "headline-lg": ["Plus Jakarta Sans"] }, "fontSize": { "headline-xl-mobile": ["28px", { "lineHeight": "36px", "fontWeight": "700" }], "headline-md": ["20px", { "lineHeight": "28px", "fontWeight": "600" }], "label-sm": ["10px", { "lineHeight": "14px", "fontWeight": "500" }], "label-lg": ["14px", { "lineHeight": "18px", "fontWeight": "600" }], "label-md": ["12px", { "lineHeight": "16px", "fontWeight": "600" }], "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }], "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }], "headline-xl": ["36px", { "lineHeight": "44px", "fontWeight": "700" }], "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }], "headline-sm": ["18px", { "lineHeight": "24px", "fontWeight": "600" }], "headline-lg": ["24px", { "lineHeight": "32px", "fontWeight": "700" }] } } } };</script><style>@layer base{html,body{width:100vw;margin:0;padding:0;}body{overscroll-behavior:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head><body class="bg-surface text-on-surface font-body-md text-body-md antialiased min-h-screen flex flex-col"><header class="fixed top-0 inset-x-0 z-50 bg-surface/85 backdrop-blur-xl pt-safe shadow-[0_1px_8px_rgba(0,0,0,0.03)]"><div class="h-16 px-margin flex items-center justify-between gap-space-sm"><div class="flex items-center gap-space-sm min-w-0"><div class="w-11 h-11 rounded-DEFAULT bg-surface-container-lowest shadow-[0_4px_12px_rgba(0,0,0,0.04)] flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-primary text-[24px]">lock</span></div><div class="flex flex-col min-w-0"><div class="flex items-center gap-space-xs"><span class="font-headline-sm text-headline-sm text-on-surface truncate">Albums</span><span class="material-symbols-outlined text-tertiary text-[18px] shrink-0" title="Encrypted &amp; Secure">verified_user</span></div><div class="flex items-center gap-space-xs"><span class="w-1.5 h-1.5 rounded-full bg-tertiary animate-pulse"></span><span class="font-label-sm text-label-sm text-outline">Syncing Active • 256-bit</span></div></div></div><div class="flex items-center gap-space-sm shrink-0"><button aria-label="Search Vault" class="w-11 h-11 rounded-full bg-surface-container-lowest shadow-[0_2px_8px_rgba(0,0,0,0.04)] flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[20px]">search</span></button><button aria-label="Cloud Sync Status" class="w-11 h-11 rounded-full bg-surface-container-lowest shadow-[0_2px_8px_rgba(0,0,0,0.04)] flex items-center justify-center text-primary transition-colors"><span class="material-symbols-outlined text-[20px]">cloud_done</span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex-1 flex flex-col relative w-full pt-16 pb-28 px-margin bg-surface"><div class="flex flex-col w-full pb-6 space-y-6">
+<!-- Smart Albums Section -->
+<section class="flex flex-col space-y-3">
+<div class="flex items-center justify-between px-1">
+<div class="flex items-center space-x-2">
+<span class="font-headline-sm text-headline-sm text-on-surface">Smart Collections</span>
+<span class="flex items-center justify-center px-2 py-0.5 rounded-full bg-primary-fixed text-on-primary-fixed-variant font-label-sm text-label-sm">Auto</span>
+</div>
+<button class="font-label-md text-label-md text-primary flex items-center space-x-1 active:opacity-70 transition-opacity" type="button">
+<span>View all</span>
+<span class="material-symbols-outlined text-[16px]">chevron_right</span>
+</button>
+</div>
+<!-- Horizontal Carousel -->
+<div class="flex space-x-3.5 overflow-x-auto pb-2 -mx-margin px-margin scrollbar-none snap-x snap-mandatory">
+<!-- Smart Card 1: Favorites -->
+<div class="snap-start shrink-0 w-44 rounded-lg bg-surface-container-lowest p-3 shadow-[0_10px_25px_-5px_rgba(30,41,59,0.05),0_2px_6px_-1px_rgba(30,41,59,0.02)] flex flex-col justify-between relative overflow-hidden group cursor-pointer active:scale-[0.98] transition-all" role="button" tabindex="0">
+<div class="absolute -right-6 -bottom-6 w-24 h-24 rounded-full bg-secondary-fixed/40 blur-xl pointer-events-none"></div>
+<div class="relative w-full h-24 rounded-DEFAULT overflow-hidden mb-3">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" data-alt="A curated, warm golden hour collection preview of treasured portraits and sunlit ocean horizons with soft warm highlights and clean scandinavian aesthetic" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBdT2zYHbyfgo88oai_i_EczYGUeGBaWKYB-SEv8OIS4trUI1ciU8HISGi3MIXyJI-PZTSV-xI-MBKSAv-NLWwv3opk6kpGZTAD2qCzqn3IXOBYbfEJZD1WudrflQnPswZD8ER8aLGuHCutFvqV0y1fx_R8ARuYG3CA5LiMIIByNNZaAftY4aWHmmuBFiWOsroaw6nDJ9se6U0m-cYBT-SfT4q4iZOuFRjcEw5FXp8"/>
+<div class="absolute inset-0 bg-gradient-to-t from-on-surface/40 via-transparent to-transparent"></div>
+<div class="absolute top-2 left-2 w-7 h-7 rounded-full bg-surface-container-lowest/90 backdrop-blur-md flex items-center justify-center shadow-sm">
+<span class="material-symbols-outlined text-secondary text-[16px]" style="font-variation-settings: 'FILL' 1;">favorite</span>
+</div>
+<span class="absolute bottom-1.5 right-2 px-1.5 py-0.5 rounded-full bg-surface-container-lowest/90 backdrop-blur-md font-label-sm text-label-sm text-on-surface font-semibold">1,420</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-headline-sm text-body-md font-semibold text-on-surface truncate">Favorites</span>
+<span class="font-label-sm text-label-sm text-outline">Updated 2h ago</span>
+</div>
+</div>
+<!-- Smart Card 2: Videos -->
+<div class="snap-start shrink-0 w-44 rounded-lg bg-surface-container-lowest p-3 shadow-[0_10px_25px_-5px_rgba(30,41,59,0.05),0_2px_6px_-1px_rgba(30,41,59,0.02)] flex flex-col justify-between relative overflow-hidden group cursor-pointer active:scale-[0.98] transition-all" role="button" tabindex="0">
+<div class="absolute -right-6 -bottom-6 w-24 h-24 rounded-full bg-primary-fixed/40 blur-xl pointer-events-none"></div>
+<div class="relative w-full h-24 rounded-DEFAULT overflow-hidden mb-3">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" data-alt="Crisp high-definition 4k video montage snapshot showing modern cinematic architecture and tranquil waves captured with soft natural daylight" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDm1XF2rP3MhMkEQHFw7XEbg9YwaB10UA5CKKB8C3lnErTo4pDRDvWRIEoAHVxkWkpsTAigRjfGDYiwSnZcpeHZJgjnFMvt0HjUOmuv1j90AG2sEOL3s7TpDsp-OEdV0FB9g5DCqFHnab2P_GpYpLkWOSoYkrvcCYddXxOdfCjKbbaFjo9zOTmwBu1r4gxsauOOSUKS0e4bU_SBJBzoBT9dNfv5QK8enM226TaRnFE"/>
+<div class="absolute inset-0 bg-gradient-to-t from-on-surface/40 via-transparent to-transparent"></div>
+<div class="absolute top-2 left-2 w-7 h-7 rounded-full bg-surface-container-lowest/90 backdrop-blur-md flex items-center justify-center shadow-sm">
+<span class="material-symbols-outlined text-primary text-[16px]" style="font-variation-settings: 'FILL' 1;">play_circle</span>
+</div>
+<span class="absolute bottom-1.5 right-2 px-1.5 py-0.5 rounded-full bg-surface-container-lowest/90 backdrop-blur-md font-label-sm text-label-sm text-on-surface font-semibold">312</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-headline-sm text-body-md font-semibold text-on-surface truncate">Videos</span>
+<span class="font-label-sm text-label-sm text-outline">32.4 GB allocated</span>
+</div>
+</div>
+<!-- Smart Card 3: Recently Added -->
+<div class="snap-start shrink-0 w-44 rounded-lg bg-surface-container-lowest p-3 shadow-[0_10px_25px_-5px_rgba(30,41,59,0.05),0_2px_6px_-1px_rgba(30,41,59,0.02)] flex flex-col justify-between relative overflow-hidden group cursor-pointer active:scale-[0.98] transition-all" role="button" tabindex="0">
+<div class="absolute -right-6 -bottom-6 w-24 h-24 rounded-full bg-tertiary-fixed/40 blur-xl pointer-events-none"></div>
+<div class="relative w-full h-24 rounded-DEFAULT overflow-hidden mb-3">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" data-alt="Fresh digital snapshots from a weekend creative retreat showcasing ceramic coffee mugs, clean studio desk, and sunny indoor plants" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAqgP1DKva9giv6cxbqVmr83gqm6SIxtmM9VQSyTB2fypQa8JqfAzH3DCLQEU4hcas9Eho2LYVKm35Luks8Ur_ClfOII3HrtZ8QRkcFn_bXD5Z2eIulNuzsJb-EyP-B5yDSqu2SyuVKhx8K3LSdtyR1ShBw2Czx6twvMn2hg9GnI3Pzc-mGTi6k79sZJhN4wgP9I1lLoclG_2Si-Y3BR3ngbKOhj-VurXRy-XQkMr4"/>
+<div class="absolute inset-0 bg-gradient-to-t from-on-surface/40 via-transparent to-transparent"></div>
+<div class="absolute top-2 left-2 w-7 h-7 rounded-full bg-surface-container-lowest/90 backdrop-blur-md flex items-center justify-center shadow-sm">
+<span class="material-symbols-outlined text-tertiary text-[16px]">schedule</span>
+</div>
+<span class="absolute bottom-1.5 right-2 px-1.5 py-0.5 rounded-full bg-surface-container-lowest/90 backdrop-blur-md font-label-sm text-label-sm text-on-surface font-semibold">89</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-headline-sm text-body-md font-semibold text-on-surface truncate">Recently Added</span>
+<span class="font-label-sm text-label-sm text-outline">Synced just now</span>
+</div>
+</div>
+</div>
+</section>
+<!-- My Albums Header & Sorting -->
+<section class="flex flex-col space-y-4">
+<div class="flex items-center justify-between px-1">
+<div class="flex items-baseline space-x-2">
+<h2 class="font-headline-md text-headline-md text-on-surface">My Albums</h2>
+<span class="font-label-md text-label-md text-outline">12 albums</span>
+</div>
+<!-- Interactive Sort Chip -->
+<div class="relative inline-block text-left" id="sort-menu-container">
+<button class="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-surface-container-lowest shadow-[0_2px_6px_-1px_rgba(30,41,59,0.06)] active:bg-surface-container-high transition-colors" id="sort-trigger" type="button">
+<span class="material-symbols-outlined text-on-surface-variant text-[16px]">swap_vert</span>
+<span class="font-label-md text-label-md text-on-surface" id="current-sort-label">Recent</span>
+<span class="material-symbols-outlined text-outline text-[16px]">keyboard_arrow_down</span>
+</button>
+<div class="hidden absolute right-0 mt-2 w-36 rounded-DEFAULT bg-surface-container-lowest shadow-[0_16px_32px_-8px_rgba(37,99,235,0.12),0_4px_12px_-2px_rgba(15,23,42,0.06)] p-1.5 z-40" id="sort-dropdown">
+<button class="sort-option w-full text-left px-2.5 py-1.5 rounded-sm font-label-md text-label-md text-on-surface bg-surface-container-low transition-colors" data-sort="Recent" type="button">Recent</button>
+<button class="sort-option w-full text-left px-2.5 py-1.5 rounded-sm font-label-md text-label-md text-on-surface-variant hover:bg-surface-container transition-colors" data-sort="Name (A-Z)" type="button">Name (A-Z)</button>
+<button class="sort-option w-full text-left px-2.5 py-1.5 rounded-sm font-label-md text-label-md text-on-surface-variant hover:bg-surface-container transition-colors" data-sort="File Count" type="button">File Count</button>
+</div>
+</div>
+</div>
+<!-- 2-Column Album Grid -->
+<div class="grid grid-cols-2 gap-3.5">
+<!-- Card 1: Holiday in Kyoto (4-photo mosaic) -->
+<div class="group flex flex-col rounded-lg bg-surface-container-lowest p-2.5 shadow-[0_10px_25px_-5px_rgba(30,41,59,0.05),0_2px_6px_-1px_rgba(30,41,59,0.02)] active:scale-[0.98] transition-transform cursor-pointer" role="button" tabindex="0">
+<!-- Folder Jacket Mosaic Container -->
+<div class="w-full aspect-square rounded-[20px] overflow-hidden bg-surface-container-high p-1 grid grid-cols-2 grid-rows-2 gap-1 mb-2.5">
+<div class="rounded-sm overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Traditional red Torii gates winding through bamboo forest in Kyoto with soft serene morning daylight" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDwNan2byBXV1WwOxcD-Z6U_ibs7Jc1IfV5zz8EwZ5HCtMVssDwdzROxIFpnlir72EcnYhXbKhNJlrmAjIAyYhbYKVtE5HfD7jdlKdfvGR_Bys5uSC9kfwd67Vj6Sp4xQbAs0InzOtcDAM-5iO7z1LgS5nJTRSYBiurtrDndUYHWRSpVSloCycjpys85WCfPz83Qx4lG-tzboxCdFNNRdGvvbe5sbbdvBuf7wIHkOg"/>
+</div>
+<div class="rounded-sm overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Delicate ceramic matcha bowl and Japanese sweets on a minimalist cedar wooden tabletop" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDzt2VZwOgwuMSgiqfcJbzE3BIg8hpt3xCBlnLUfcXKJQuzjjoWbEW0Kak3dZhEk55XhavtmE7QN3X7pgJrYKS8HGWJ1_040lBcacipjRTiddQmVmmtAPlztjvwYgpZx40n0iVSoiqjvHbJf4Wdof0qjz6CS4wjCrEdus4C2Y1VivIYQgYSeiANI-reeF96GcYdCQq3e489CZrBPnzpY5qaY12VY5u8miVI4whXqyY"/>
+</div>
+<div class="rounded-sm overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Cherry blossom branches gently draping over a quiet canal street in historical Kyoto" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC7ZAW9ztMcLJQEFIMqvUwEB_PaPkcjWdvfHuk76H_x7cdt1qpkPKj3lmowYgZY89Xf860qMq0qogdhuqGo-GD6zBvSvuqy0tBzlzfOJm_IOsHp6PLjdkzOLvXCJNO8hUeRv2S3JPNQT4ChLI66JZIA4s-z3wSukWGaE1L3F2yNnH6VWoU-1bJstU5OKrTRxm-KEpaZXP33Al2cFz9CTlXoWS6n90VYN1qaxUSmN-w"/>
+</div>
+<div class="rounded-sm overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Golden stone temple garden with meticulously raked sand patterns and ancient pine tree" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAoY9hTb1lz_royppdcqVkbiRJO99mifj0scwcebRF5oZ2pdHvW7tXx6n2SnEAtYyCs297c9PpYGBRpRQblSGKAZxjc3Cp73AofL_K0i-m8zZuW9z1Qk9E3nS7wTHjZAnlPWNLmnHVIF-bRNIYrLXP0wgoIkPJm9zj3JZe-MbBreoBRSgqe6BSEGaBI_mpMZRG0ZvssWS1IPrSYzhfscZ42keAFi6yHEUfcQgLkKyw"/>
+</div>
+</div>
+<div class="flex flex-col px-1">
+<span class="font-headline-sm text-body-md font-semibold text-on-surface truncate">Holiday in Kyoto</span>
+<div class="flex items-center justify-between mt-0.5">
+<span class="font-body-sm text-body-sm text-outline">128 items</span>
+<span class="material-symbols-outlined text-outline-variant text-[16px]">more_horiz</span>
+</div>
+</div>
+</div>
+<!-- Card 2: Family & Friends (4-photo mosaic) -->
+<div class="group flex flex-col rounded-lg bg-surface-container-lowest p-2.5 shadow-[0_10px_25px_-5px_rgba(30,41,59,0.05),0_2px_6px_-1px_rgba(30,41,59,0.02)] active:scale-[0.98] transition-transform cursor-pointer" role="button" tabindex="0">
+<div class="w-full aspect-square rounded-[20px] overflow-hidden bg-surface-container-high p-1 grid grid-cols-2 grid-rows-2 gap-1 mb-2.5">
+<div class="rounded-sm overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Joyful family laughing together around a sunny outdoor picnic spread in early summer" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDEpne9Bi7lRFM3BE7O550SHXmsCvHGjW15VqNt1tcDdXOZEpNR1vd13I11iK-jhx3kL34rvY5O9yo_F_GttP7aKYCQIdpikSnfF2zJFCA4PGkxRTffi_mNGjDGgsWDbzD_0jSHcjag8thwZn8hHAnZZLqT8XyJSNLLcHD4FV_C-2exrZVqxRJY5ReEtWrneL-c0nxoimv6ynsr_SMgivX1E0uadtzY_hodPFYqNck"/>
+</div>
+<div class="rounded-sm overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Close up candid portrait of smiling young friends sharing stories under ambient fairy string lights" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDHFK9bVbtskowYL88ufZBf_oc7DrqI_88ZlDQUTaBLvX5V2Vj1z0cS0dAigB8WHCkX66aXiaRxNrxE5BwWthW_IQvVbi-Kvrsw1NZj7MyymQtSAy22TcgDbwVtVeYfkUc84gqyXuof0Q4Gd_21WiVxMmMjQm3tJWIcBP1yUH18g74gNnRh4lOcpwvhd7N4VdF85wx1itDNOczXTAV9Xwk0LEGu6SZXC-AqexvUmu8"/>
+</div>
+<div class="rounded-sm overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Handcrafted birthday cake with glowing sparkler candle surrounded by festive party decor" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDjQ8mtEd2m5q7hWmXtWgAOXUtGqAb1a4PFK1xOAtSct7-y0wDLA8mXOpDy8qzcmznBCqLeqxTa4tGr168aBjB-r6Tngqq17MO6qrDf6v9kxOzsUKgTzfqtVLy9MVMggMfHIYXvBOcwY4tthiN13DVcK6-9acR16Z9Cd4nHZ3o0ZUtOn9kwMtISBQ3atZQv6A_QDez26iOG_DARkvFVfJQ_539N765XSvu1aIiVKgQ"/>
+</div>
+<div class="rounded-sm overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Golden retriever dog leaping joyously through meadow wildflowers with friends cheering" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCFmbMun-JxoNaEA1viuI_tAjnAuRsdnGlXVH8dLCocnYEScLLHNUtWQZ9jJAkKp1SysFi39NB6czXPMldYk7JwirWoA5f2lJlcZBMyE_AE5_nldE1bdlXd9Lq88EwFh6ClBRnqfBwMcYt7D9_ZpPx-FUL-KW3TW7klhb9-b0NtxT38wkfG2cbhGRR7J3FcrHnmDx5AkeLKBH5svxA24lu82nDu5_p7CYsfCmAM74U"/>
+</div>
+</div>
+<div class="flex flex-col px-1">
+<span class="font-headline-sm text-body-md font-semibold text-on-surface truncate">Family &amp; Friends</span>
+<div class="flex items-center justify-between mt-0.5">
+<span class="font-body-sm text-body-sm text-outline">254 items</span>
+<span class="material-symbols-outlined text-outline-variant text-[16px]">more_horiz</span>
+</div>
+</div>
+</div>
+<!-- Card 3: Architecture & City (High-contrast cover) -->
+<div class="group flex flex-col rounded-lg bg-surface-container-lowest p-2.5 shadow-[0_10px_25px_-5px_rgba(30,41,59,0.05),0_2px_6px_-1px_rgba(30,41,59,0.02)] active:scale-[0.98] transition-transform cursor-pointer" role="button" tabindex="0">
+<div class="w-full aspect-square rounded-[20px] overflow-hidden bg-surface-container relative mb-2.5">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" data-alt="Striking minimalist glass and brutalist concrete skyscraper façade angled against a pure dramatic azure sky with high architectural contrast" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD0wKElFBCx3dmo5RJ_LtQe1koSQlkUBkO5I0kDarUMUQ58qGw9MbLcfi8CI6VRnLgMpIevuXJnQihrKhXqkPAJOt-pH75U6QX6qQPKQKgtxgf9_LacJvMGYkwpTG0ut2UaE_C7IvTiHWtGbgVCLCkih9eBmQP7fhW8_Vrz1Y5VR0XXsYsdYUxQL5YI21AJ8_7UGvTC44h_Q25vWEO8NTCYDMnxtDoxqwVhLMVuZAM"/>
+<div class="absolute inset-0 bg-gradient-to-t from-on-surface/50 via-transparent to-transparent"></div>
+<span class="absolute bottom-2 left-2 px-2 py-0.5 rounded-full bg-surface-container-lowest/80 backdrop-blur-md font-label-sm text-label-sm text-on-surface">Pro RAW</span>
+</div>
+<div class="flex flex-col px-1">
+<span class="font-headline-sm text-body-md font-semibold text-on-surface truncate">Architecture &amp; City</span>
+<div class="flex items-center justify-between mt-0.5">
+<span class="font-body-sm text-body-sm text-outline">84 items</span>
+<span class="material-symbols-outlined text-outline-variant text-[16px]">more_horiz</span>
+</div>
+</div>
+</div>
+<!-- Card 4: Road Trip 2026 (Scenic cover) -->
+<div class="group flex flex-col rounded-lg bg-surface-container-lowest p-2.5 shadow-[0_10px_25px_-5px_rgba(30,41,59,0.05),0_2px_6px_-1px_rgba(30,41,59,0.02)] active:scale-[0.98] transition-transform cursor-pointer" role="button" tabindex="0">
+<div class="w-full aspect-square rounded-[20px] overflow-hidden bg-surface-container relative mb-2.5">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" data-alt="Breathtaking winding coastal highway hugging emerald ocean cliffs with warm late afternoon sunset glow" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCJCj0QNdlOsKcusVFtjSSTdk1w9yo18nxcMyonq-HH4VZg6wK_AQXYo_ghiZra2zdXKkQFs_IzHOMxwauLURfbPfTVNXXw2OUy0ws24aEkCptiEfOXlvA3Hxvx700dkkJYY6cqRJIIu3-NRwKVxSuJ3vh1ZFF7X2Zey1uboTKZkf-FKC3Nc3wNh7ivB7UfRNipMBNBqrEw1THPqxi5trVIvn7d10LiEAswQiEZLL0"/>
+<div class="absolute inset-0 bg-gradient-to-t from-on-surface/50 via-transparent to-transparent"></div>
+<span class="absolute top-2 right-2 w-6 h-6 rounded-full bg-surface-container-lowest/80 backdrop-blur-md flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[14px]">map</span>
+</span>
+</div>
+<div class="flex flex-col px-1">
+<span class="font-headline-sm text-body-md font-semibold text-on-surface truncate">Road Trip 2026</span>
+<div class="flex items-center justify-between mt-0.5">
+<span class="font-body-sm text-body-sm text-outline">62 items</span>
+<span class="material-symbols-outlined text-outline-variant text-[16px]">more_horiz</span>
+</div>
+</div>
+</div>
+<!-- Card 5: Receipts & Scans (Encrypted Green Shield) -->
+<div class="group flex flex-col rounded-lg bg-surface-container-lowest p-2.5 shadow-[0_10px_25px_-5px_rgba(30,41,59,0.05),0_2px_6px_-1px_rgba(30,41,59,0.02)] active:scale-[0.98] transition-transform cursor-pointer relative" role="button" tabindex="0">
+<div class="w-full aspect-square rounded-[20px] overflow-hidden bg-surface-container-low flex flex-col items-center justify-center relative p-3 mb-2.5">
+<!-- Subtle vault mesh watermark -->
+<div class="absolute -right-3 -top-3 w-16 h-16 rounded-full bg-tertiary-container/15 blur-lg"></div>
+<div class="w-12 h-12 rounded-full bg-tertiary-container flex items-center justify-center shadow-md mb-2">
+<span class="material-symbols-outlined text-on-tertiary text-[24px]">enhanced_encryption</span>
+</div>
+<!-- Zero-Knowledge Shield Badge -->
+<div class="flex items-center space-x-1 px-2 py-1 rounded-full bg-surface-container-lowest/90 backdrop-blur-sm shadow-sm">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary"></span>
+<span class="font-label-sm text-label-sm text-tertiary font-semibold truncate max-w-[105px]">Zero-Knowledge</span>
+</div>
+</div>
+<div class="flex flex-col px-1">
+<div class="flex items-center space-x-1">
+<span class="font-headline-sm text-body-md font-semibold text-on-surface truncate">Receipts &amp; Scans</span>
+<span class="material-symbols-outlined text-tertiary text-[14px]">lock</span>
+</div>
+<div class="flex items-center justify-between mt-0.5">
+<span class="font-body-sm text-body-sm text-outline">41 items</span>
+<span class="material-symbols-outlined text-outline-variant text-[16px]">more_horiz</span>
+</div>
+</div>
+</div>
+<!-- Card 6: Design Inspiration (4-photo mosaic) -->
+<div class="group flex flex-col rounded-lg bg-surface-container-lowest p-2.5 shadow-[0_10px_25px_-5px_rgba(30,41,59,0.05),0_2px_6px_-1px_rgba(30,41,59,0.02)] active:scale-[0.98] transition-transform cursor-pointer" role="button" tabindex="0">
+<div class="w-full aspect-square rounded-[20px] overflow-hidden bg-surface-container-high p-1 grid grid-cols-2 grid-rows-2 gap-1 mb-2.5">
+<div class="rounded-sm overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Sleek scandinavian minimalist armchair in soft ivory bouclé texture beside a curated art publication" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAjeoXgZ6cNjF5gZYcknQsVrG3H_qyPsYfdvdPnYUVQ6bUOE3oWmTC8uUUQ8_-ksRAK9jOKzP_UG8nFYYUvDTpj8wnOepC0dkNtWIbo1OqszJebhn_9ICZHy0WxzTbxR2KSxgjn5xu6T22g6buVR_wvtURmFUmPLlShfsGYwieh5NaL1w0io_oXXEtzgrFdBwm3JU06i8bXWW0U1m3DFj2unfMCF1N3BcORXVqKkd4"/>
+</div>
+<div class="rounded-sm overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Playful 3D gradient abstract geometric composition in pastel cobalt blue, coral orange, and mint" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA_-JMH7F4ltuyRse1CfzsPMnZh-YLOCSkXkbpJT2c0qhs7kNr47nrh8G12C61TQxVZg0WoYV8h0_dnGLFcmUaZACFnXqOoCqobbuGPVLiu10qKFqGx1ie9evg8q1XoZ5T6q0PVxIpjJ2x8qPgBi7OiCFDE6yBW1UGDSaoHJqbw3zKg6DtJ3Se1qvU3Cvzk3p2q-Tgbqdk0evft_RAQGBTKlAay_Jen03pNn8sSn5s"/>
+</div>
+<div class="rounded-sm overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Clean Swiss-style typographic poster design on textured recycled cotton paper" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA2DxfIA8yPXjt21yfX-CwvkydYLk6qxsHb_VLO59K8gJ6FtfMSLt_FyuuCDM1WN27eNkvr3aGcFQaQ-ZrMd0COlky34XTLmGL8BhFn8v_dypaU87-AEa6AsY5gqNyA8MqzrLg3KjkLNJWi_wZcNQsm7SmrC42am7QO_-DEgCOXwIjBEv2FYjHhNHvwCsH1jQVZagHlflb8eLSnS9dUOLFTsN8s3FQk0Exnz5wMHAI"/>
+</div>
+<div class="rounded-sm overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Architectural moodboard with fabric swatches, terrazzo stone tiles, and metallic bronze brass details" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCHGAvDbbqW2GMSsA4RrilVc-T4GxRqsh1qGsscDtDwAf__f0Qo-4B5mXNWYFW1W30i7xupz9iJaCSdJexLTNY72dO2EhHsOsfz4B4Tpo8jG_sLNr7_mDcid-5ZlaGO1rEfFLLVouqkfRIq3Rveo_rTdC45nGa6XiggkIIw_uGeRPkiMUaBNfsqufTFqdKnXRxNzN6bgP2KcqeYjMLI-D0dDKcALPi30waYjtzO3kw"/>
+</div>
+</div>
+<div class="flex flex-col px-1">
+<span class="font-headline-sm text-body-md font-semibold text-on-surface truncate">Design Inspiration</span>
+<div class="flex items-center justify-between mt-0.5">
+<span class="font-body-sm text-body-sm text-outline">95 items</span>
+<span class="material-symbols-outlined text-outline-variant text-[16px]">more_horiz</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Tactile Storage Health Callout -->
+<section class="rounded-lg bg-surface-container-lowest p-4 shadow-[0_10px_25px_-5px_rgba(30,41,59,0.05)] flex items-center justify-between">
+<div class="flex items-center space-x-3 min-w-0">
+<div class="w-10 h-10 rounded-full bg-primary-fixed flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-primary text-[20px]">cloud_sync</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-headline-sm text-body-md text-on-surface font-semibold truncate">All albums synced</span>
+<span class="font-label-sm text-label-sm text-outline truncate">Automatic backup enabled over Wi-Fi</span>
+</div>
+</div>
+<span class="material-symbols-outlined text-tertiary text-[20px] shrink-0">check_circle</span>
+</section>
+<!-- Floating '+' Action Button (FAB) -->
+<div class="fixed right-5 bottom-24 z-40">
+<button aria-label="Create New Album" class="w-14 h-14 rounded-full bg-primary-container text-on-primary-container shadow-[0_12px_24px_-4px_rgba(37,99,235,0.45)] flex items-center justify-center hover:scale-105 active:scale-95 transition-transform duration-200 focus:outline-none" id="fab-create-album" type="button">
+<span class="material-symbols-outlined text-[28px]">add</span>
+</button>
+</div>
+<!-- New Album Bottom Sheet Modal (Interactive Delight) -->
+<div class="hidden fixed inset-0 z-50 flex items-end justify-center bg-inverse-surface/40 backdrop-blur-sm p-4 transition-opacity" id="modal-new-album">
+<div class="w-full max-w-sm rounded-lg bg-surface-container-lowest p-5 shadow-[0_25px_50px_-12px_rgba(15,23,42,0.25)] flex flex-col space-y-4 animate-in slide-in-from-bottom duration-200">
+<div class="flex items-center justify-between">
+<div class="flex items-center space-x-2">
+<div class="w-8 h-8 rounded-full bg-primary-fixed flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-[18px]">create_new_folder</span>
+</div>
+<span class="font-headline-sm text-headline-sm text-on-surface">New Album</span>
+</div>
+<button class="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-outline hover:text-on-surface" id="modal-close-btn" type="button">
+<span class="material-symbols-outlined text-[18px]">close</span>
+</button>
+</div>
+<div class="flex flex-col space-y-1.5">
+<label class="font-label-md text-label-md text-outline" for="album-name-input">Album Title</label>
+<input class="w-full px-3.5 py-2.5 rounded-DEFAULT bg-surface-container-low font-body-md text-body-md text-on-surface placeholder:text-outline focus:outline-none focus:bg-surface-container transition-colors" id="album-name-input" placeholder="e.g., Summer Getaway" type="text"/>
+</div>
+<!-- Encryption Toggle Pill -->
+<div class="flex items-center justify-between p-2.5 rounded-DEFAULT bg-surface-container-low">
+<div class="flex items-center space-x-2">
+<span class="material-symbols-outlined text-tertiary text-[20px]">shield</span>
+<div class="flex flex-col">
+<span class="font-label-md text-label-md text-on-surface font-semibold">Zero-Knowledge Lock</span>
+<span class="font-label-sm text-label-sm text-outline">Encrypt with private key</span>
+</div>
+</div>
+<button class="w-10 h-6 rounded-full bg-outline-variant p-0.5 transition-colors relative flex items-center" id="encrypt-toggle" type="button">
+<div class="w-5 h-5 rounded-full bg-surface-container-lowest shadow-sm transition-transform duration-200" id="toggle-knob"></div>
+</button>
+</div>
+<div class="flex space-x-2.5 pt-1">
+<button class="flex-1 py-2.5 rounded-full bg-surface-container text-on-surface font-label-lg text-label-lg active:opacity-75" id="modal-cancel-btn" type="button">Cancel</button>
+<button class="flex-1 py-2.5 rounded-full bg-primary-container text-on-primary font-label-lg text-label-lg shadow-md active:opacity-90" id="modal-create-confirm" type="button">Create</button>
+</div>
+</div>
+</div>
+</div>
+<script>
+  // Sort dropdown toggle
+  const sortTrigger = document.getElementById('sort-trigger');
+  const sortDropdown = document.getElementById('sort-dropdown');
+  const sortLabel = document.getElementById('current-sort-label');
+  const sortOptions = document.querySelectorAll('.sort-option');
+
+  if (sortTrigger && sortDropdown) {
+    sortTrigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      sortDropdown.classList.toggle('hidden');
+    });
+
+    sortOptions.forEach((option) => {
+      option.addEventListener('click', (e) => {
+        const selected = e.target.getAttribute('data-sort');
+        if (sortLabel && selected) {
+          sortLabel.textContent = selected;
+        }
+        sortDropdown.classList.add('hidden');
+      });
+    });
+
+    document.addEventListener('click', () => {
+      if (!sortDropdown.classList.contains('hidden')) {
+        sortDropdown.classList.add('hidden');
+      }
+    });
+  }
+
+  // Floating Action Button & New Album Modal
+  const fab = document.getElementById('fab-create-album');
+  const modal = document.getElementById('modal-new-album');
+  const closeBtn = document.getElementById('modal-close-btn');
+  const cancelBtn = document.getElementById('modal-cancel-btn');
+  const createConfirm = document.getElementById('modal-create-confirm');
+  const albumInput = document.getElementById('album-name-input');
+
+  const openModal = () => {
+    if (modal) {
+      modal.classList.remove('hidden');
+      setTimeout(() => {
+        albumInput?.focus();
+      }, 100);
+    }
+  };
+
+  const closeModal = () => {
+    if (modal) {
+      modal.classList.add('hidden');
+      if (albumInput) albumInput.value = '';
+    }
+  };
+
+  fab?.addEventListener('click', openModal);
+  closeBtn?.addEventListener('click', closeModal);
+  cancelBtn?.addEventListener('click', closeModal);
+  createConfirm?.addEventListener('click', closeModal);
+
+  // Micro-interaction for encryption toggle
+  const toggleBtn = document.getElementById('encrypt-toggle');
+  const toggleKnob = document.getElementById('toggle-knob');
+  let isEncrypted = false;
+
+  toggleBtn?.addEventListener('click', () => {
+    isEncrypted = !isEncrypted;
+    if (isEncrypted) {
+      toggleBtn.classList.remove('bg-outline-variant');
+      toggleBtn.classList.add('bg-tertiary');
+      toggleKnob.classList.add('translate-x-4');
+    } else {
+      toggleBtn.classList.add('bg-outline-variant');
+      toggleBtn.classList.remove('bg-tertiary');
+      toggleKnob.classList.remove('translate-x-4');
+    }
+  });
+</script></main><nav class="fixed bottom-0 inset-x-0 z-50 pointer-events-none pb-safe"><div class="px-space-md pb-space-sm pt-space-xs"><div class="pointer-events-auto mx-auto max-w-md bg-surface-container-lowest/90 backdrop-blur-2xl rounded-full shadow-[0_20px_40px_-10px_rgba(15,23,42,0.12)] p-1.5 flex items-center justify-between" data-active-classes="bg-primary-container text-on-primary-container font-headline-sm shadow-[0_8px_16px_-4px_rgba(37,99,235,0.35)]"><a class="flex flex-col items-center justify-center min-w-[56px] h-12 rounded-full text-on-surface-variant transition-all" data-path="home-dashboard" href="#"><span class="material-symbols-outlined text-[22px]">space_dashboard</span><span class="font-label-sm text-label-sm">Home</span></a><a class="flex flex-col items-center justify-center min-w-[56px] h-12 rounded-full text-on-surface-variant transition-all" data-path="gallery" href="#"><span class="material-symbols-outlined text-[22px]">photo_library</span><span class="font-label-sm text-label-sm">Gallery</span></a><a class="flex flex-col items-center justify-center min-w-[56px] h-12 rounded-full text-on-surface-variant transition-all" data-path="albums" href="#"><span class="material-symbols-outlined text-[22px]">folder_special</span><span class="font-label-sm text-label-sm">Albums</span></a><a class="flex flex-col items-center justify-center min-w-[56px] h-12 rounded-full text-on-surface-variant transition-all" data-path="files" href="#"><span class="material-symbols-outlined text-[22px]">folder_open</span><span class="font-label-sm text-label-sm">Files</span></a><a class="flex flex-col items-center justify-center min-w-[56px] h-12 rounded-full text-on-surface-variant transition-all" data-path="settings" href="#"><span class="material-symbols-outlined text-[22px]">settings</span><span class="font-label-sm text-label-sm">Settings</span></a></div></div></nav></body></html>
