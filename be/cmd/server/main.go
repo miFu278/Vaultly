@@ -74,18 +74,21 @@ func main() {
 	deviceUC := usecase.NewDeviceUseCase(deviceRepo)
 	folderUC := usecase.NewFolderUseCase(folderRepo)
 	fileUC := usecase.NewFileUseCase(fileRepo, deviceRepo, storageService, cryptoService, thumbnailer)
+	storageUC := usecase.NewStorageUseCase(userRepo, fileRepo)
 	pairingUC := usecase.NewPairingUseCase(pairingRepo, deviceRepo, fileRepo, tokenService)
 
 	// 5. Initialize Presentation / HTTP Layer
 	r := gin.New()
 	presentationHttp.SetupRoutes(r, presentationHttp.RouterDependencies{
-		AuthUseCase:    authUC,
-		DeviceUseCase:  deviceUC,
-		FolderUseCase:  folderUC,
-		FileUseCase:    fileUC,
-		PairingUseCase: pairingUC,
-		TokenService:   tokenService,
-		MaxUploadBytes: cfg.MaxUploadBytes(),
+		AuthUseCase:      authUC,
+		DeviceUseCase:    deviceUC,
+		FolderUseCase:    folderUC,
+		FileUseCase:      fileUC,
+		StorageUseCase:   storageUC,
+		PairingUseCase:   pairingUC,
+		TokenService:     tokenService,
+		DeviceRepository: deviceRepo,
+		MaxUploadBytes:   cfg.MaxUploadBytes(),
 	})
 
 	// 6. HTTP Server Setup with Graceful Shutdown

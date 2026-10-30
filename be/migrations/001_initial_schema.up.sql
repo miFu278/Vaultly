@@ -6,9 +6,19 @@ CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
+    pin_hash VARCHAR(255) NULL,
+    storage_quota_bytes BIGINT NOT NULL DEFAULT 2147483648,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Databases created before the PIN lock existed already have the table above, so
+-- the column is added separately as well.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_hash VARCHAR(255) NULL;
+
+-- Storage quota per account (default 2 GiB). The dashboard compares it with the
+-- summed size of the user's live files.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS storage_quota_bytes BIGINT NOT NULL DEFAULT 2147483648;
 
 -- Devices table
 CREATE TABLE IF NOT EXISTS devices (

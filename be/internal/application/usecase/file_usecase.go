@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 	"vaultly-be/internal/application/dto"
+	"vaultly-be/internal/domain"
 	"vaultly-be/internal/domain/entity"
 	"vaultly-be/internal/domain/repository"
 	"vaultly-be/internal/domain/service"
@@ -45,6 +47,13 @@ func NewFileUseCase(
 
 // InitUpload creates a pending file metadata record and generates presigned PUT URLs for full-res and thumbnail
 func (uc *FileUseCase) InitUpload(ctx context.Context, userID uuid.UUID, req dto.InitUploadRequest) (*dto.InitUploadResponse, error) {
+	if req.Size <= 0 {
+		return nil, errors.New("size must be greater than zero")
+	}
+	if strings.TrimSpace(req.ContentType) == "" {
+		return nil, errors.New("content_type is required")
+	}
+
 	fileID := uuid.New()
 	objectKey := fmt.Sprintf("%s/%s", userID.String(), fileID.String())
 
@@ -153,25 +162,18 @@ func (uc *FileUseCase) ListFilesByFolder(ctx context.Context, userID uuid.UUID, 
 	}, nil
 }
 
-// DownloadFile generates a presigned GET URL and fetches the wrapped key for the requesting device
+// DownloadFile generates a presigned GET URL and the file key wrapped for the
+// requesting device. It never returns an unwrapped key: a caller without a
+// wrapped key for this file is not authorized to read it.
 func (uc *FileUseCase) DownloadFile(ctx context.Context, userID, deviceID, fileID uuid.UUID) (*dto.DownloadResponse, error) {
 	file, err := uc.fileRepo.GetReadyByID(ctx, fileID, userID)
 	if err != nil {
 		return nil, err
 	}
 
-	wrappedKey := ""
 	fk, err := uc.fileRepo.GetFileKey(ctx, fileID, deviceID)
-	if err == nil {
-		wrappedKey = fk.WrappedKey
-	} else {
-		// Fallback: if no device key registered, extract key from file.Nonce
-		parts := strings.Split(file.Nonce, ":")
-		if len(parts) >= 2 {
-			wrappedKey = parts[1]
-		} else {
-			wrappedKey = file.Nonce
-		}
+	if err != nil {
+		return nil, domain.ErrDeviceUnauthorized
 	}
 
 	presignedURL, err := uc.storage.GeneratePresignedGetURL(ctx, file.R2ObjectKey)
@@ -186,7 +188,7 @@ func (uc *FileUseCase) DownloadFile(ctx context.Context, userID, deviceID, fileI
 
 	return &dto.DownloadResponse{
 		PresignedURL: presignedURL,
-		WrappedKey:   wrappedKey,
+		WrappedKey:   fk.WrappedKey,
 		Nonce:        nonce,
 		ContentType:  file.ContentType,
 		Size:         file.Size,
@@ -214,18 +216,27 @@ func (uc *FileUseCase) GetThumbnail(ctx context.Context, userID, fileID uuid.UUI
 	}, nil
 }
 
-// DeleteFile removes file record and both full-res and thumbnail ciphertext from storage
+// DeleteFile removes the ciphertext and then the metadata record. The record is
+// hidden first and only dropped once storage has confirmed the delete, so a
+// storage failure stays retryable instead of leaving an unreferenced object.
 func (uc *FileUseCase) DeleteFile(ctx context.Context, userID, fileID uuid.UUID) error {
-	objectKey, thumbKey, err := uc.fileRepo.Delete(ctx, idOrNil(fileID), userID)
+	objectKey, thumbKey, shared, err := uc.fileRepo.MarkDeleted(ctx, fileID, userID)
 	if err != nil {
 		return err
 	}
 
-	_ = uc.storage.DeleteObject(ctx, objectKey)
-	if thumbKey != "" {
-		_ = uc.storage.DeleteObject(ctx, thumbKey)
+	if !shared {
+		if err := uc.storage.DeleteObject(ctx, objectKey); err != nil {
+			return fmt.Errorf("failed to delete file ciphertext (retry to finish): %w", err)
+		}
+		if thumbKey != "" {
+			if err := uc.storage.DeleteObject(ctx, thumbKey); err != nil {
+				return fmt.Errorf("failed to delete thumbnail ciphertext (retry to finish): %w", err)
+			}
+		}
 	}
-	return nil
+
+	return uc.fileRepo.Purge(ctx, fileID, userID)
 }
 
 // UploadEncryptedImage handles direct server-side image encryption & storage upload:
@@ -344,6 +355,10 @@ func (uc *FileUseCase) UploadEncryptedStream(
 
 	// The nonce column keeps the "header:key" shape older clients parse: the first
 	// segment's stream header plus the file key shared by every segment.
+	// shortcut: this stores the file key in the metadata row, so the vault is
+	// server-trusted rather than end-to-end encrypted; uploads must move to
+	// client-side encryption (POST /files/init + presigned PUT) and drop the key
+	// from this column before the E2EE claim in the docs holds.
 	combinedNonce := fmt.Sprintf("%s:%s", hex.EncodeToString(streamHeader), hex.EncodeToString(fileKey))
 
 	// 4. Stream the ciphertext into storage
@@ -469,10 +484,6 @@ func (uc *FileUseCase) storeThumbnail(
 		return ""
 	}
 	return thumbKey
-}
-
-func idOrNil(id uuid.UUID) uuid.UUID {
-	return id
 }
 
 // MoveFileToFolder changes the folder_id of a file

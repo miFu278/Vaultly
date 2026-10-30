@@ -2,6 +2,8 @@ package usecase
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,10 +21,16 @@ func NewDeviceUseCase(deviceRepo repository.DeviceRepository) *DeviceUseCase {
 }
 
 func (uc *DeviceUseCase) RegisterDevice(ctx context.Context, userID uuid.UUID, req dto.RegisterDeviceRequest) (*dto.DeviceDTO, error) {
+	name := strings.TrimSpace(req.Name)
+	publicKey := strings.TrimSpace(req.PublicKey)
+	if name == "" || publicKey == "" {
+		return nil, errors.New("name and public_key are required")
+	}
+
 	device := entity.Device{
 		UserID:    userID,
-		PublicKey: req.PublicKey,
-		Name:      req.Name,
+		PublicKey: publicKey,
+		Name:      name,
 		CreatedAt: time.Now(),
 	}
 

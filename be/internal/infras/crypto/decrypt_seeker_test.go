@@ -2,6 +2,7 @@ package crypto_test
 
 import (
 	"bytes"
+	"encoding/binary"
 	"io"
 	"testing"
 
@@ -376,12 +377,85 @@ func TestOpenDecryptStream_RejectsTamperedAndTruncated(t *testing.T) {
 		}
 	})
 
+	t.Run("reordered segments", func(t *testing.T) {
+		// Two full segments have the same ciphertext length, so a swap keeps the
+		// object size and every offset intact. Only the per-segment key can tell.
+		stored, key := encryptSegmented(t, pattern(2*int(crypto.SegmentPlainSize)))
+		headerLen := int64(len(crypto.SegmentMagic) + 8 + 4)
+		segLen := fullSegmentLen()
+		first := stored[headerLen : headerLen+segLen]
+		second := stored[headerLen+segLen : headerLen+2*segLen]
+
+		swapped := append([]byte{}, stored[:headerLen]...)
+		swapped = append(swapped, second...)
+		swapped = append(swapped, first...)
+
+		stream, err := cryptoSvc.OpenDecryptStream(key, int64(len(swapped)), io.NopCloser(bytes.NewReader(swapped)), nil)
+		if err != nil {
+			t.Fatalf("OpenDecryptStream failed: %v", err)
+		}
+		defer stream.Close()
+		if _, err := io.ReadAll(stream); err == nil {
+			t.Fatal("a swapped segment must not decrypt")
+		}
+	})
+
 	t.Run("wrong size", func(t *testing.T) {
 		stored, key := encryptSegmented(t, plain)
 		if _, err := cryptoSvc.OpenDecryptStream(key, int64(len(stored))+1, io.NopCloser(bytes.NewReader(stored)), nil); err == nil {
 			t.Fatal("a payload whose length disagrees with its header must be rejected")
 		}
 	})
+}
+
+// Objects written with the first segmented layout share one key across
+// segments; they must stay readable after the per-index key change.
+func TestOpenDecryptStream_ReadsFirstSegmentedLayout(t *testing.T) {
+	cryptoSvc := crypto.NewSodiumCryptoService()
+	key, err := cryptoSvc.GenerateFileKey()
+	if err != nil {
+		t.Fatalf("GenerateFileKey failed: %v", err)
+	}
+	plain := pattern(2*int(crypto.SegmentPlainSize) + 100)
+
+	var stored memWriteSeeker
+	if _, err := stored.Write(make([]byte, len(crypto.SegmentMagic)+8+4)); err != nil {
+		t.Fatalf("writing the placeholder header failed: %v", err)
+	}
+	for off := 0; off < len(plain); off += int(crypto.SegmentPlainSize) {
+		end := off + int(crypto.SegmentPlainSize)
+		if end > len(plain) {
+			end = len(plain)
+		}
+		if _, err := cryptoSvc.EncryptStream(bytes.NewReader(plain[off:end]), &stored, key); err != nil {
+			t.Fatalf("EncryptStream failed: %v", err)
+		}
+	}
+
+	header := []byte("VLTYSEG1")
+	header = binary.BigEndian.AppendUint64(header, uint64(len(plain)))
+	header = binary.BigEndian.AppendUint32(header, uint32(crypto.SegmentPlainSize))
+	if _, err := stored.Seek(0, io.SeekStart); err != nil {
+		t.Fatalf("Seek failed: %v", err)
+	}
+	if _, err := stored.Write(header); err != nil {
+		t.Fatalf("writing the header failed: %v", err)
+	}
+
+	obj := newObject(stored.buf)
+	stream, err := cryptoSvc.OpenDecryptStream(key, int64(len(stored.buf)), io.NopCloser(bytes.NewReader(stored.buf)), obj.fetch)
+	if err != nil {
+		t.Fatalf("OpenDecryptStream failed: %v", err)
+	}
+	defer stream.Close()
+
+	all, err := io.ReadAll(stream)
+	if err != nil {
+		t.Fatalf("ReadAll failed: %v", err)
+	}
+	if !bytes.Equal(all, plain) {
+		t.Fatal("VLTYSEG1 payload did not round-trip")
+	}
 }
 
 func TestPlaintextSizeForCipherLen(t *testing.T) {

@@ -183,18 +183,75 @@ func (r *FileRepositoryPG) UpdateStatus(ctx context.Context, id uuid.UUID, statu
 	return err
 }
 
-func (r *FileRepositoryPG) Delete(ctx context.Context, id, userID uuid.UUID) (string, string, error) {
-	var objectKey string
-	var thumbKey string
-	query := `DELETE FROM files WHERE id = $1 AND user_id = $2 RETURNING r2_object_key, r2_thumbnail_key`
-	err := r.pool.QueryRow(ctx, query, id, userID).Scan(&objectKey, &thumbKey)
+// MarkDeleted hides a file and reports the objects it uses. The row is kept until
+// the caller has removed the ciphertext, so a storage failure leaves something to
+// retry instead of an object nothing points at.
+func (r *FileRepositoryPG) MarkDeleted(ctx context.Context, id, userID uuid.UUID) (string, string, bool, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return "", "", false, err
+	}
+	defer tx.Rollback(ctx)
+
+	var objectKey, thumbKey string
+	query := `SELECT r2_object_key, r2_thumbnail_key FROM files WHERE id = $1 AND user_id = $2 FOR UPDATE`
+	err = tx.QueryRow(ctx, query, id, userID).Scan(&objectKey, &thumbKey)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", "", domain.ErrFileNotFound
+			return "", "", false, domain.ErrFileNotFound
 		}
-		return "", "", err
+		return "", "", false, err
 	}
-	return objectKey, thumbKey, nil
+
+	if _, err = tx.Exec(ctx, `UPDATE files SET status = 'deleted', updated_at = NOW() WHERE id = $1`, id); err != nil {
+		return "", "", false, err
+	}
+
+	// A copy of this file shares both keys; the ciphertext may only be deleted
+	// after the last live record that points at it is gone.
+	sharedQuery := `
+		SELECT EXISTS (
+			SELECT 1 FROM files
+			WHERE id <> $1 AND status <> 'deleted'
+			  AND (r2_object_key = $2 OR ($3 <> '' AND r2_thumbnail_key = $3))
+		)
+	`
+	var shared bool
+	if err = tx.QueryRow(ctx, sharedQuery, id, objectKey, thumbKey).Scan(&shared); err != nil {
+		return "", "", false, err
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return "", "", false, err
+	}
+	return objectKey, thumbKey, shared, nil
+}
+
+// Purge drops the metadata row of a file that MarkDeleted already hid.
+func (r *FileRepositoryPG) Purge(ctx context.Context, id, userID uuid.UUID) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM files WHERE id = $1 AND user_id = $2`, id, userID)
+	return err
+}
+
+// Usage sums the size of the user's live files in one query, split by media
+// kind so the dashboard can show a breakdown without a second round trip.
+func (r *FileRepositoryPG) Usage(ctx context.Context, userID uuid.UUID) (entity.FileUsage, error) {
+	query := `
+		SELECT
+			COALESCE(SUM(size), 0),
+			COUNT(*),
+			COALESCE(SUM(size) FILTER (WHERE content_type LIKE 'image/%'), 0),
+			COALESCE(SUM(size) FILTER (WHERE content_type LIKE 'video/%'), 0)
+		FROM files
+		WHERE user_id = $1 AND status <> 'deleted'
+	`
+	var usage entity.FileUsage
+	err := r.pool.QueryRow(ctx, query, userID).
+		Scan(&usage.TotalBytes, &usage.FileCount, &usage.PhotoBytes, &usage.VideoBytes)
+	if err != nil {
+		return entity.FileUsage{}, err
+	}
+	return usage, nil
 }
 
 func (r *FileRepositoryPG) SaveFileKeys(ctx context.Context, fileID uuid.UUID, keys []entity.FileKey) error {

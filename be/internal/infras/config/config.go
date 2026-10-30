@@ -8,6 +8,10 @@ import (
 	"github.com/joho/godotenv"
 )
 
+// defaultJWTSecret is the development fallback. Production refuses it (see
+// validate) because every deployment would share the same signing key.
+const defaultJWTSecret = "default_secret_key_change_me"
+
 type Config struct {
 	Port                          string
 	Env                           string
@@ -40,14 +44,13 @@ func LoadConfig() (*Config, error) {
 	cfg := &Config{
 		Port:                          getEnv("PORT", "8080"),
 		Env:                           getEnv("ENV", "development"),
-		DatabaseURI:                   getEnv("DATABASE_URL", ""),
 		DBHost:                        getEnv("DB_HOST", "localhost"),
 		DBPort:                        getEnv("DB_PORT", "5432"),
 		DBUser:                        getEnv("DB_USER", "vaultly"),
 		DBPassword:                    getEnv("DB_PASSWORD", "vaultly_secret"),
 		DBName:                        getEnv("DB_NAME", "vaultly"),
 		DBSSLMode:                     getEnv("DB_SSLMODE", "disable"),
-		JWTSecret:                     getEnv("JWT_SECRET", "default_secret_key_change_me"),
+		JWTSecret:                     getEnv("JWT_SECRET", defaultJWTSecret),
 		JWTExpirationHours:            jwtHours,
 		R2AccountID:                   getEnv("R2_ACCOUNT_ID", ""),
 		R2AccessKeyID:                 getEnv("R2_ACCESS_KEY_ID", ""),
@@ -57,8 +60,28 @@ func LoadConfig() (*Config, error) {
 		PresignedURLExpirationMinutes: presignedMinutes,
 		MaxUploadMB:                   maxUploadMB,
 	}
+	cfg.DatabaseURI = getEnv("DATABASE_URL", "")
+
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
 
 	return cfg, nil
+}
+
+// validate refuses to start production with a fallback secret or a bucket that
+// will silently turn into in-memory storage.
+func (c *Config) validate() error {
+	if c.Env != "production" {
+		return nil
+	}
+	if c.JWTSecret == "" || c.JWTSecret == defaultJWTSecret {
+		return fmt.Errorf("production requires JWT_SECRET; refusing to run with the built-in default")
+	}
+	if c.R2AccessKeyID == "" || c.R2SecretAccessKey == "" || (c.R2Endpoint == "" && c.R2AccountID == "") {
+		return fmt.Errorf("production requires R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_ENDPOINT or R2_ACCOUNT_ID")
+	}
+	return nil
 }
 
 // MaxUploadBytes is the configured per-request upload cap in bytes.

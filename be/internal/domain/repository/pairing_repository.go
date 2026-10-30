@@ -15,5 +15,5 @@ type PairingWithUser struct {
 type PairingRepository interface {
 	Create(ctx context.Context, pairing *entity.Pairing) error
 	GetByToken(ctx context.Context, token string) (*PairingWithUser, error)
-	CompletePairingTx(ctx context.Context, token string, userID uuid.UUID, newDevice *entity.Device, wrappedKeys []entity.FileKey) error
+	CompletePairingTx(ctx context.Context, token string, userID uuid.UUID, wrappedKeys []entity.FileKey) error
 }

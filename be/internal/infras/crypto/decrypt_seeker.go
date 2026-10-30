@@ -34,11 +34,12 @@ type segment struct {
 // 64 KiB chunk and a video seek costs one segment instead of the whole file.
 // A legacy single-stream object is the degenerate one-segment case.
 type segmentReader struct {
-	key     []byte
-	total   int64
-	segs    []segment
-	fetch   func(offset, length int64) (io.ReadCloser, error)
-	initial io.ReadCloser // ciphertext stream positioned at the first segment
+	key          []byte
+	perIndexKeys bool // segment key is derived from its position (VLTYSEG2)
+	total        int64
+	segs         []segment
+	fetch        func(offset, length int64) (io.ReadCloser, error)
+	initial      io.ReadCloser // ciphertext stream positioned at the first segment
 
 	idx      int // open segment, -1 when none
 	cipher   io.ReadCloser
@@ -78,12 +79,16 @@ func (s *SodiumCryptoService) OpenDecryptStream(
 	}
 
 	var segs []segment
-	if int64(n) == segmentHeaderSize && string(probe[:len(SegmentMagic)]) == SegmentMagic {
+	magic := ""
+	if int64(n) == segmentHeaderSize {
+		magic = string(probe[:len(SegmentMagic)])
+	}
+	if magic == SegmentMagic || magic == segmentMagicV1 {
 		if segs, err = parseSegmentedHeader(probe, cipherLen); err != nil {
 			_ = src.Close()
 			return nil, err
 		}
-		return newSegmentReader(key, segs, src, fetch)
+		return newSegmentReader(key, segs, src, fetch, magic == SegmentMagic)
 	}
 
 	// Legacy single-stream object: hand back the bytes the probe consumed.
@@ -91,10 +96,10 @@ func (s *SodiumCryptoService) OpenDecryptStream(
 		_ = src.Close()
 		return nil, err
 	}
-	return newSegmentReader(key, segs, prefixedReadCloser(probe[:n], src), fetch)
+	return newSegmentReader(key, segs, prefixedReadCloser(probe[:n], src), fetch, false)
 }
 
-func newSegmentReader(key []byte, segs []segment, initial io.ReadCloser, fetch func(offset, length int64) (io.ReadCloser, error)) (*segmentReader, error) {
+func newSegmentReader(key []byte, segs []segment, initial io.ReadCloser, fetch func(offset, length int64) (io.ReadCloser, error), perIndexKeys bool) (*segmentReader, error) {
 	if len(segs) == 0 {
 		return nil, fmt.Errorf("%w: no segments", domain.ErrDecryptionFailed)
 	}
@@ -103,13 +108,14 @@ func newSegmentReader(key []byte, segs []segment, initial io.ReadCloser, fetch f
 	}
 	last := segs[len(segs)-1]
 	return &segmentReader{
-		key:     key,
-		total:   last.plainOffset + last.plainLen,
-		segs:    segs,
-		initial: initial,
-		fetch:   fetch,
-		idx:     -1,
-		scratch: make([]byte, 4096),
+		key:          key,
+		perIndexKeys: perIndexKeys,
+		total:        last.plainOffset + last.plainLen,
+		segs:         segs,
+		initial:      initial,
+		fetch:        fetch,
+		idx:          -1,
+		scratch:      make([]byte, 4096),
 	}, nil
 }
 
@@ -314,7 +320,11 @@ func (r *segmentReader) openSegment(i int) error {
 		_ = src.Close()
 		return fmt.Errorf("%w: failed to read segment header: %v", domain.ErrDecryptionFailed, err)
 	}
-	dec, err := secretstream.NewDecryptor(r.key, header)
+	key := r.key
+	if r.perIndexKeys {
+		key = segmentKey(r.key, i)
+	}
+	dec, err := secretstream.NewDecryptor(key, header)
 	if err != nil {
 		_ = src.Close()
 		return fmt.Errorf("%w: %v", domain.ErrDecryptionFailed, err)

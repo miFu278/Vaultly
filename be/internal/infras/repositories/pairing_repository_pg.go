@@ -61,7 +61,7 @@ func (r *PairingRepositoryPG) GetByToken(ctx context.Context, token string) (*re
 	}, nil
 }
 
-func (r *PairingRepositoryPG) CompletePairingTx(ctx context.Context, token string, userID uuid.UUID, newDevice *entity.Device, wrappedKeys []entity.FileKey) error {
+func (r *PairingRepositoryPG) CompletePairingTx(ctx context.Context, token string, userID uuid.UUID, wrappedKeys []entity.FileKey) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -72,12 +72,13 @@ func (r *PairingRepositoryPG) CompletePairingTx(ctx context.Context, token strin
 	var pairingID uuid.UUID
 	var status string
 	var expiresAt time.Time
+	var publicKey, deviceName string
 	query := `
-		SELECT id, status, expires_at
+		SELECT id, status, expires_at, public_key, device_name
 		FROM pairings
 		WHERE pairing_token = $1 FOR UPDATE
 	`
-	err = tx.QueryRow(ctx, query, token).Scan(&pairingID, &status, &expiresAt)
+	err = tx.QueryRow(ctx, query, token).Scan(&pairingID, &status, &expiresAt, &publicKey, &deviceName)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.ErrPairingNotFound
@@ -92,18 +93,19 @@ func (r *PairingRepositoryPG) CompletePairingTx(ctx context.Context, token strin
 		return domain.ErrPairingExpired
 	}
 
-	// Insert new authorized device
+	// The new device's public key and name come from the pairing session it
+	// started: other devices wrap file keys with this public key, so it must be
+	// the caller's key rather than whatever the approving device sent.
+	var deviceID uuid.UUID
 	insertDevQuery := `
 		INSERT INTO devices (user_id, public_key, name, created_at)
 		VALUES ($1, $2, $3, NOW())
-		RETURNING id, created_at
+		RETURNING id
 	`
-	err = tx.QueryRow(ctx, insertDevQuery, userID, newDevice.PublicKey, newDevice.Name).
-		Scan(&newDevice.ID, &newDevice.CreatedAt)
+	err = tx.QueryRow(ctx, insertDevQuery, userID, publicKey, deviceName).Scan(&deviceID)
 	if err != nil {
 		return err
 	}
-	newDevice.UserID = userID
 
 	// Insert wrapped keys for existing files for new device
 	keyInsertQuery := `
@@ -112,7 +114,7 @@ func (r *PairingRepositoryPG) CompletePairingTx(ctx context.Context, token strin
 		ON CONFLICT (file_id, device_id) DO UPDATE SET wrapped_key = EXCLUDED.wrapped_key
 	`
 	for _, wk := range wrappedKeys {
-		_, err = tx.Exec(ctx, keyInsertQuery, wk.FileID, newDevice.ID, wk.WrappedKey)
+		_, err = tx.Exec(ctx, keyInsertQuery, wk.FileID, deviceID, wk.WrappedKey)
 		if err != nil {
 			return err
 		}
@@ -124,7 +126,7 @@ func (r *PairingRepositoryPG) CompletePairingTx(ctx context.Context, token strin
 		SET status = 'completed', user_id = $1, created_device_id = $2
 		WHERE id = $3
 	`
-	_, err = tx.Exec(ctx, updatePairingQuery, userID, newDevice.ID, pairingID)
+	_, err = tx.Exec(ctx, updatePairingQuery, userID, deviceID, pairingID)
 	if err != nil {
 		return err
 	}

@@ -2,6 +2,8 @@ package crypto
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -12,8 +14,16 @@ import (
 
 const (
 	// SegmentMagic marks a stored payload that is split into independent
-	// secretstream segments. Objects without it are legacy single-stream payloads.
-	SegmentMagic = "VLTYSEG1"
+	// secretstream segments. Each segment uses its own key, derived from the file
+	// key and the segment's position, so moving a segment breaks authentication
+	// instead of decrypting into wrong plaintext. Objects with neither magic are
+	// legacy single-stream payloads.
+	SegmentMagic = "VLTYSEG2"
+
+	// segmentMagicV1 is the first segmented layout: identical framing, but every
+	// segment used the file key directly, so reordering two segments went
+	// unnoticed. It is still read so objects written before the change work.
+	segmentMagicV1 = "VLTYSEG1"
 
 	// SegmentPlainSize is the plaintext size of every segment but the last. It
 	// bounds the network cost of serving a byte range: a player asking for one
@@ -26,6 +36,18 @@ const (
 	segmentHeaderSize = int64(len(SegmentMagic) + 8 + 4)
 )
 
+// segmentKey derives the secretstream key for one segment position. Binding the
+// index into the key is what makes a swapped, duplicated or transplanted
+// segment fail authentication instead of decrypting into plausible plaintext.
+func segmentKey(master []byte, index int) []byte {
+	var idx [4]byte
+	binary.BigEndian.PutUint32(idx[:], uint32(index))
+	mac := hmac.New(sha256.New, master)
+	mac.Write([]byte(SegmentMagic))
+	mac.Write(idx[:])
+	return mac.Sum(nil)
+}
+
 // EncryptSegmentedStream encrypts r into w as a sequence of independent
 // secretstream segments.
 //
@@ -37,8 +59,6 @@ const (
 // It returns the plaintext size and the first segment's stream header, which
 // callers keep as the payload nonce. w must be seekable: the object header
 // carries the plaintext size, which is only known after the payload is read.
-// Each segment is a fresh secretstream with its own random header, so reusing the
-// same file key across segments is safe.
 func (s *SodiumCryptoService) EncryptSegmentedStream(r io.Reader, w io.WriteSeeker, key []byte) (int64, []byte, error) {
 	if len(key) != 32 {
 		return 0, nil, domain.ErrInvalidKeyLength
@@ -49,6 +69,7 @@ func (s *SodiumCryptoService) EncryptSegmentedStream(r io.Reader, w io.WriteSeek
 
 	var plainSize int64
 	var firstHeader []byte
+	index := 0
 	seg := make([]byte, SegmentPlainSize)
 	for {
 		n, err := io.ReadFull(r, seg)
@@ -58,13 +79,14 @@ func (s *SodiumCryptoService) EncryptSegmentedStream(r io.Reader, w io.WriteSeek
 		// An empty payload still gets one (empty) segment so it decrypts to an
 		// empty plaintext instead of looking corrupt.
 		if n > 0 || plainSize == 0 {
-			header, encErr := s.EncryptStream(bytes.NewReader(seg[:n]), w, key)
+			header, encErr := s.EncryptStream(bytes.NewReader(seg[:n]), w, segmentKey(key, index))
 			if encErr != nil {
 				return 0, nil, encErr
 			}
 			if firstHeader == nil {
 				firstHeader = header
 			}
+			index++
 		}
 		plainSize += int64(n)
 		if err == io.EOF || err == io.ErrUnexpectedEOF {
@@ -121,6 +143,12 @@ func PlaintextSizeForCipherLen(cipherLen int64) (int64, bool) {
 		return plain, true
 	}
 	return 0, false
+}
+
+// segmentedFormatV1 reports whether head carries the first segmented magic,
+// whose segments share one key.
+func segmentedFormatV1(head []byte) bool {
+	return string(head[:len(segmentMagicV1)]) == segmentMagicV1
 }
 
 // parseSegmentedHeader turns the fixed segment header plus the stored ciphertext

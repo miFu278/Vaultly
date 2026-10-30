@@ -6,18 +6,21 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"vaultly-be/internal/application/usecase"
+	"vaultly-be/internal/domain/repository"
 	"vaultly-be/internal/domain/service"
 	"vaultly-be/internal/presentation/http/handlers"
 	"vaultly-be/internal/presentation/http/middleware"
 )
 
 type RouterDependencies struct {
-	AuthUseCase    *usecase.AuthUseCase
-	DeviceUseCase  *usecase.DeviceUseCase
-	FolderUseCase  *usecase.FolderUseCase
-	FileUseCase    *usecase.FileUseCase
-	PairingUseCase *usecase.PairingUseCase
-	TokenService   service.TokenService
+	AuthUseCase       *usecase.AuthUseCase
+	DeviceUseCase     *usecase.DeviceUseCase
+	FolderUseCase     *usecase.FolderUseCase
+	FileUseCase       *usecase.FileUseCase
+	StorageUseCase    *usecase.StorageUseCase
+	PairingUseCase    *usecase.PairingUseCase
+	TokenService      service.TokenService
+	DeviceRepository  repository.DeviceRepository
 	// MaxUploadBytes caps a single upload body (0 = handler default).
 	MaxUploadBytes int64
 }
@@ -34,8 +37,8 @@ func SetupRoutes(r *gin.Engine, deps RouterDependencies) huma.API {
 	r.MaxMultipartMemory = multipartMemoryBytes
 
 	// Setup standard Gin middleware
-	r.Use(gin.Logger())
 	r.Use(gin.Recovery())
+	r.Use(middleware.RequestLogger())
 	r.Use(middleware.BodyLimitMiddleware(maxJSONBodyBytes))
 	r.Use(middleware.CORSMiddleware())
 
@@ -65,7 +68,7 @@ func SetupRoutes(r *gin.Engine, deps RouterDependencies) huma.API {
 			}
 		}
 		if authHeader != "" {
-			claims, err := deps.TokenService.Validate(authHeader)
+			claims, err := middleware.ResolveClaims(ctx.Context(), deps.TokenService, deps.DeviceRepository, authHeader)
 			if err == nil {
 				ctx = huma.WithValue(ctx, handlers.UserIDKey, claims.UserID)
 				ctx = huma.WithValue(ctx, handlers.EmailKey, claims.Email)
@@ -90,10 +93,11 @@ func SetupRoutes(r *gin.Engine, deps RouterDependencies) huma.API {
 	handlers.RegisterDeviceRoutes(api, deps.DeviceUseCase)
 	handlers.RegisterFolderRoutes(api, deps.FolderUseCase, deps.FileUseCase)
 	handlers.RegisterFileRoutes(api, deps.FileUseCase)
+	handlers.RegisterStorageRoutes(api, deps.StorageUseCase)
 	handlers.RegisterPairingRoutes(api, deps.PairingUseCase)
 
 	// Register Gin-specific routes (multipart image upload & decrypted stream view)
-	authMW := middleware.AuthMiddleware(deps.TokenService)
+	authMW := middleware.AuthMiddleware(deps.TokenService, deps.DeviceRepository)
 	handlers.RegisterFileGinRoutes(r, deps.FileUseCase, authMW, deps.MaxUploadBytes)
 
 	return api

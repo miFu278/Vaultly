@@ -196,7 +196,7 @@ func RegisterFileRoutes(api huma.API, fileUC *usecase.FileUseCase) {
 		Tags:        []string{"Files"},
 		Security:    []map[string][]string{{"bearerAuth": {}}},
 	}, func(ctx context.Context, input *struct {
-		ID   string     `path:"id" doc:"File UUID"`
+		ID   string `path:"id" doc:"File UUID"`
 		Body struct {
 			FolderID *uuid.UUID `json:"folder_id" doc:"Target folder UUID, or null to remove from folder"`
 		}
@@ -227,7 +227,7 @@ func RegisterFileRoutes(api huma.API, fileUC *usecase.FileUseCase) {
 		Tags:        []string{"Files"},
 		Security:    []map[string][]string{{"bearerAuth": {}}},
 	}, func(ctx context.Context, input *struct {
-		ID   string     `path:"id" doc:"File UUID"`
+		ID   string `path:"id" doc:"File UUID"`
 		Body struct {
 			FolderID *uuid.UUID `json:"folder_id" doc:"Target folder UUID"`
 		}

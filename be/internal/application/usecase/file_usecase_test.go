@@ -5,16 +5,19 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"image"
 	"image/color"
 	"image/jpeg"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/nacl/box"
 	"vaultly-be/internal/application/usecase"
+	"vaultly-be/internal/domain"
 	"vaultly-be/internal/domain/entity"
 	"vaultly-be/internal/domain/service"
 	"vaultly-be/internal/infras/config"
@@ -77,14 +80,44 @@ func (m *MockFileRepo) ListByFolder(ctx context.Context, userID uuid.UUID, folde
 	return files, nil, false, err
 }
 
-func (m *MockFileRepo) Delete(ctx context.Context, id, userID uuid.UUID) (string, string, error) {
-	if f, ok := m.files[id]; ok && f.UserID == userID {
-		key := f.R2ObjectKey
-		thumb := f.R2ThumbnailKey
-		delete(m.files, id)
-		return key, thumb, nil
+func (m *MockFileRepo) MarkDeleted(ctx context.Context, id, userID uuid.UUID) (string, string, bool, error) {
+	f, ok := m.files[id]
+	if !ok || f.UserID != userID {
+		return "", "", false, domain.ErrFileNotFound
 	}
-	return "", "", nil
+	shared := false
+	for otherID, other := range m.files {
+		if otherID != id && other.Status != entity.FileStatusDeleted && other.R2ObjectKey == f.R2ObjectKey {
+			shared = true
+		}
+	}
+	f.Status = entity.FileStatusDeleted
+	return f.R2ObjectKey, f.R2ThumbnailKey, shared, nil
+}
+
+func (m *MockFileRepo) Purge(ctx context.Context, id, userID uuid.UUID) error {
+	if f, ok := m.files[id]; ok && f.UserID == userID {
+		delete(m.files, id)
+	}
+	return nil
+}
+
+func (m *MockFileRepo) Usage(ctx context.Context, userID uuid.UUID) (entity.FileUsage, error) {
+	var usage entity.FileUsage
+	for _, f := range m.files {
+		if f.UserID != userID || f.Status == entity.FileStatusDeleted {
+			continue
+		}
+		usage.TotalBytes += f.Size
+		usage.FileCount++
+		switch {
+		case strings.HasPrefix(f.ContentType, "image/"):
+			usage.PhotoBytes += f.Size
+		case strings.HasPrefix(f.ContentType, "video/"):
+			usage.VideoBytes += f.Size
+		}
+	}
+	return usage, nil
 }
 
 func (m *MockFileRepo) SaveFileKeys(ctx context.Context, fileID uuid.UUID, keys []entity.FileKey) error {
@@ -432,6 +465,87 @@ func TestFileUseCase_UploadGeneratesEncryptedThumbnail(t *testing.T) {
 	}
 	if cfgImg.Width != 512 || cfgImg.Height != 341 {
 		t.Fatalf("thumbnail is %dx%d, want 512x341", cfgImg.Width, cfgImg.Height)
+	}
+}
+
+// recordingStorage records which objects were deleted and can fail on demand.
+type recordingStorage struct {
+	service.ObjectStorage
+	deleted []string
+	failErr error
+}
+
+func (r *recordingStorage) DeleteObject(ctx context.Context, key string) error {
+	if r.failErr != nil {
+		return r.failErr
+	}
+	r.deleted = append(r.deleted, key)
+	return nil
+}
+
+func seedFile(repo *MockFileRepo, userID uuid.UUID, objectKey string) uuid.UUID {
+	id := uuid.New()
+	repo.files[id] = &entity.File{
+		ID:             id,
+		UserID:         userID,
+		R2ObjectKey:    objectKey,
+		R2ThumbnailKey: objectKey + "_thumb",
+		Status:         entity.FileStatusReady,
+	}
+	return id
+}
+
+// A storage failure must reach the caller and leave the record in place, or the
+// ciphertext stays in the bucket with nothing pointing at it.
+func TestDeleteFile_StorageFailureKeepsTheRecord(t *testing.T) {
+	repo := NewMockFileRepo()
+	store := &recordingStorage{failErr: errors.New("storage unavailable")}
+	fileUC := usecase.NewFileUseCase(repo, NewMockDeviceRepo(), store, crypto.NewSodiumCryptoService(), nil)
+
+	userID := uuid.New()
+	fileID := seedFile(repo, userID, "user/object")
+
+	if err := fileUC.DeleteFile(context.Background(), userID, fileID); err == nil {
+		t.Fatal("a failed storage delete must be reported so the caller can retry")
+	}
+	stored := repo.files[fileID]
+	if stored == nil {
+		t.Fatal("the record must stay until storage confirms the delete")
+	}
+	if stored.Status != entity.FileStatusDeleted {
+		t.Fatalf("status = %s, want deleted so the file leaves every listing", stored.Status)
+	}
+}
+
+// Copies share one storage object, so deleting one copy must not pull the
+// ciphertext out from under the others.
+func TestDeleteFile_CopyKeepsTheSharedObject(t *testing.T) {
+	repo := NewMockFileRepo()
+	store := &recordingStorage{}
+	fileUC := usecase.NewFileUseCase(repo, NewMockDeviceRepo(), store, crypto.NewSodiumCryptoService(), nil)
+
+	userID := uuid.New()
+	originalID := seedFile(repo, userID, "user/shared")
+	copied, err := repo.CopyFile(context.Background(), originalID, userID, nil)
+	if err != nil {
+		t.Fatalf("CopyFile failed: %v", err)
+	}
+
+	if err := fileUC.DeleteFile(context.Background(), userID, originalID); err != nil {
+		t.Fatalf("DeleteFile failed: %v", err)
+	}
+	if len(store.deleted) != 0 {
+		t.Fatalf("deleted %v while a copy still uses the object", store.deleted)
+	}
+	if repo.files[copied.ID] == nil {
+		t.Fatal("the copy must survive its original being deleted")
+	}
+
+	if err := fileUC.DeleteFile(context.Background(), userID, copied.ID); err != nil {
+		t.Fatalf("DeleteFile on the copy failed: %v", err)
+	}
+	if len(store.deleted) != 2 {
+		t.Fatalf("deleted %v, want the object and its thumbnail on the last delete", store.deleted)
 	}
 }
 
