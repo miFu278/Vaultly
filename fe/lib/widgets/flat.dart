@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_tokens.dart';
 
-/// Brand mark: the rounded blue tile with a lock, used on the unlock screen, the
-/// auth screen and the shell header.
+/// Brand mark: the official Vaultly app icon (padlock + camera aperture).
 class VaultMark extends StatelessWidget {
   final double size;
   final bool onColor;
@@ -12,17 +11,26 @@ class VaultMark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: onColor ? colors.surface : colors.primary,
-        borderRadius: BorderRadius.circular(size * 0.32),
-      ),
-      child: Icon(
-        Icons.lock_outline_rounded,
-        size: size * 0.5,
-        color: onColor ? colors.primary : colors.onPrimary,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(size * 0.28),
+      child: Image.asset(
+        'assets/logo_cropped.png',
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            color: onColor ? colors.surface : colors.primary,
+            borderRadius: BorderRadius.circular(size * 0.32),
+          ),
+          child: Icon(
+            Icons.lock_outline_rounded,
+            size: size * 0.5,
+            color: onColor ? colors.primary : colors.onPrimary,
+          ),
+        ),
       ),
     );
   }
