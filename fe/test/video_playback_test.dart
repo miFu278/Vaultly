@@ -3,8 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vaultly/models/photo_item.dart';
 import 'package:vaultly/screens/photo_viewer_screen.dart';
 import 'package:vaultly/theme/app_theme.dart';
-import 'package:vaultly/widgets/neumorphic.dart';
-import 'package:vaultly/widgets/photo_grid_item.dart';
+import 'package:vaultly/widgets/flat.dart';
+import 'package:vaultly/widgets/photo_tile.dart';
 import 'package:vaultly/widgets/video_player_view.dart';
 
 PhotoItem _item(String id, {required bool isVideo, String? title}) {
@@ -36,7 +36,10 @@ void main() {
           SizedBox(
             width: 200,
             height: 200,
-            child: PhotoGridItem(photo: _item('v1', isVideo: true)),
+            child: PhotoTile(
+              photo: _item('v1', isVideo: true),
+              onTap: () {},
+            ),
           ),
         ),
       );
@@ -44,7 +47,7 @@ void main() {
 
       expect(find.byType(Image), findsNothing);
       expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
-      expect(find.text('clip.mp4'), findsOneWidget);
+      expect(find.text('Video'), findsOneWidget);
     });
 
     testWidgets('image tile still uses a network image',
@@ -54,7 +57,10 @@ void main() {
           SizedBox(
             width: 200,
             height: 200,
-            child: PhotoGridItem(photo: _item('p1', isVideo: false)),
+            child: PhotoTile(
+              photo: _item('p1', isVideo: false),
+              onTap: () {},
+            ),
           ),
         ),
       );
@@ -114,7 +120,7 @@ void main() {
     expect(find.textContaining('Không phát được'), findsOneWidget);
     expect(
       find.descendant(
-        of: find.byType(NeumorphicButton),
+        of: find.byType(PillButton),
         matching: find.text('Thử lại'),
       ),
       findsOneWidget,

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import '../theme/app_tokens.dart';
-import 'neumorphic.dart';
+import 'flat.dart';
 
 /// Plays an E2EE video stream served by `GET /files/{id}/view`.
 ///
@@ -132,12 +132,13 @@ class _VideoPlayerViewState extends State<VideoPlayerView> {
       children: [
         Expanded(
           child: Center(
-            child: Neumorphic(
-              inset: true,
-              radius: AppRadii.rMd,
-              color: colors.mediaCanvas,
-              clipContent: true,
+            child: Container(
               padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: colors.mediaCanvas,
+                borderRadius: AppRadii.md,
+              ),
+              clipBehavior: Clip.antiAlias,
               child: AspectRatio(
                 aspectRatio: aspectRatio,
                 child: ClipRRect(
@@ -181,12 +182,14 @@ class _VideoPlayerViewState extends State<VideoPlayerView> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Neumorphic(
+          Container(
             width: 72,
             height: 72,
-            inset: true,
-            radius: AppRadii.rPill,
-            color: colors.surfaceMuted,
+            decoration: BoxDecoration(
+              color: colors.surfaceMuted,
+              shape: BoxShape.circle,
+            ),
+            alignment: Alignment.center,
             child: SizedBox(
               width: 22,
               height: 22,
@@ -213,12 +216,13 @@ class _VideoPlayerViewState extends State<VideoPlayerView> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Neumorphic(
+            Container(
               width: 72,
               height: 72,
-              inset: true,
-              radius: AppRadii.rPill,
-              color: colors.surfaceMuted,
+              decoration: BoxDecoration(
+                color: colors.surfaceMuted,
+                shape: BoxShape.circle,
+              ),
               child: Icon(icon, size: 30, color: colors.danger),
             ),
             const SizedBox(height: AppSpacing.lg),
@@ -228,7 +232,7 @@ class _VideoPlayerViewState extends State<VideoPlayerView> {
               style: AppTypography.body.copyWith(color: colors.foregroundMuted),
             ),
             const SizedBox(height: AppSpacing.lg),
-            NeumorphicButton(
+            PillButton(
               onPressed: _load,
               icon: Icons.refresh_rounded,
               label: 'Thử lại',
@@ -251,9 +255,8 @@ class _VideoPlayerViewState extends State<VideoPlayerView> {
         final positionMs =
             position.inMilliseconds.clamp(0, totalMs < 0 ? 0 : totalMs);
 
-        return Neumorphic(
+        return SurfaceCard(
           radius: AppRadii.rMd,
-          depth: 0.7,
           padding: const EdgeInsets.fromLTRB(
             AppSpacing.sm,
             AppSpacing.xs,
@@ -262,13 +265,13 @@ class _VideoPlayerViewState extends State<VideoPlayerView> {
           ),
           child: Row(
             children: [
-              NeumorphicIconButton(
+              RoundIconButton(
                 icon: value.isPlaying
                     ? Icons.pause_rounded
                     : Icons.play_arrow_rounded,
                 tooltip: value.isPlaying ? 'Tạm dừng' : 'Phát',
-                iconSize: 22,
-                iconColor: colors.foreground,
+                size: 40,
+                bordered: false,
                 onPressed: _togglePlay,
               ),
               Text(

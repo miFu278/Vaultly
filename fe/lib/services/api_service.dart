@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/folder.dart';
 import '../models/photo_item.dart';
+import '../models/storage_usage.dart';
 
 /// Error thrown by [ApiService] for non-successful HTTP responses.
 class ApiException implements Exception {
@@ -42,6 +43,7 @@ class ApiService {
   static const String _kUserIdKey = 'vaultly_user_id';
   static const String _kPinKey = 'vaultly_vault_pin';
   static const String _kHasPinKey = 'vaultly_has_server_pin';
+  static const String _kOnboardingKey = 'vaultly_onboarding_done';
 
   // Timeout for PIN lock (15 minutes)
   static const int kPinTimeoutMinutes = 15;
@@ -99,8 +101,10 @@ class ApiService {
       _token = prefs.getString(_kTokenKey);
       _userEmail = prefs.getString(_kEmailKey);
       _userId = prefs.getString(_kUserIdKey);
-      _savedPin = prefs.getString(_kPinKey);
       _hasServerPin = prefs.getBool(_kHasPinKey) ?? false;
+      // Older builds stored the PIN itself; drop it so the plain-text copy the
+      // device still holds is gone for good.
+      await prefs.remove(_kPinKey);
       _isInitialized = true;
     } catch (e) {
       debugPrint('Error initializing ApiService: $e');
@@ -142,11 +146,13 @@ class ApiService {
   }
 
   /// Set up or update the 6-digit PIN locally and (best-effort) sync it to the server.
+  ///
+  /// The PIN is kept in memory for this session only. Writing it to
+  /// SharedPreferences would leave it readable as plain text on the device, and
+  /// the server copy is the source of truth anyway.
   Future<bool> setPin(String pin) async {
     _savedPin = pin;
     _lastUnlockedAt = DateTime.now();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kPinKey, pin);
 
     if (!isAuthenticated) return true;
 
@@ -178,37 +184,35 @@ class ApiService {
     return false;
   }
 
-  /// Verify the PIN locally first, then fall back to server verification
-  /// (covers new devices that have a server-side PIN but no local cache).
+  /// Verify the PIN with the server first, so a PIN changed on another device
+  /// takes effect here, and fall back to the in-memory copy only when the server
+  /// cannot be reached.
   Future<bool> unlockWithPin(String pin) async {
-    if (verifyAndUnlockPin(pin)) return true;
-    if (!isAuthenticated) return false;
-
-    try {
-      final res = await http
-          .post(
-            Uri.parse('$_baseUrl/auth/pin/verify'),
-            headers: _authHeaders,
-            body: jsonEncode({'pin': pin}),
-          )
-          .timeout(const Duration(seconds: 10));
-      if (res.statusCode != 200) return false;
-
-      final data = jsonDecode(utf8.decode(res.bodyBytes));
-      final valid = data is Map && data['valid'] == true;
-      if (valid) {
-        // Cache the verified PIN locally for fast subsequent unlocks.
-        _savedPin = pin;
-        _lastUnlockedAt = DateTime.now();
-        await _persistHasPin(true);
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(_kPinKey, pin);
+    if (isAuthenticated && _isOnline) {
+      try {
+        final res = await http
+            .post(
+              Uri.parse('$_baseUrl/auth/pin/verify'),
+              headers: _authHeaders,
+              body: jsonEncode({'pin': pin}),
+            )
+            .timeout(const Duration(seconds: 10));
+        if (res.statusCode == 200) {
+          final data = jsonDecode(utf8.decode(res.bodyBytes));
+          final valid = data is Map && data['valid'] == true;
+          if (valid) {
+            _savedPin = pin;
+            _lastUnlockedAt = DateTime.now();
+            await _persistHasPin(true);
+          }
+          return valid;
+        }
+      } catch (e) {
+        debugPrint('PIN server verification failed, using the cached PIN: $e');
+        _isOnline = false;
       }
-      return valid;
-    } catch (e) {
-      debugPrint('PIN server verification failed: $e');
-      return false;
     }
+    return verifyAndUnlockPin(pin);
   }
 
   /// Explicitly lock the vault (e.g. user taps lock or 15 mins passed)
@@ -337,6 +341,36 @@ class ApiService {
     } catch (e) {
       return {'success': false, 'error': 'Không thể kết nối máy chủ: $e'};
     }
+  }
+
+  /// Whether the first-run introduction has already been shown.
+  Future<bool> hasSeenOnboarding() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_kOnboardingKey) ?? false;
+  }
+
+  Future<void> completeOnboarding() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kOnboardingKey, true);
+  }
+
+  /// Vault usage and quota for the signed-in account. Returns null when the
+  /// account cannot be reached, so the dashboard degrades instead of throwing.
+  Future<StorageUsage?> fetchStorage() async {
+    if (!isAuthenticated) return null;
+
+    final res = await http.get(
+      Uri.parse('$_baseUrl/storage'),
+      headers: _authHeaders,
+    );
+    if (res.statusCode == 401) {
+      throw const ApiException(401, 'Phiên đăng nhập đã hết hạn');
+    }
+    if (res.statusCode != 200) return null;
+
+    final dynamic data = jsonDecode(utf8.decode(res.bodyBytes));
+    if (data is! Map<String, dynamic>) return null;
+    return StorageUsage.fromJson(data);
   }
 
   /// Fetch user folders from database

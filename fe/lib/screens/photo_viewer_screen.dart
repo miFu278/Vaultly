@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/photo_item.dart';
 import '../theme/app_tokens.dart';
-import '../widgets/neumorphic.dart';
+import '../widgets/flat.dart';
 import '../widgets/video_player_view.dart';
 
 class PhotoViewerScreen extends StatefulWidget {
@@ -91,93 +91,72 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
+      backgroundColor: colors.surface,
       elevation: 0,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadii.rXl)),
+      ),
       builder: (ctx) {
-        return Neumorphic(
-          depth: 1.4,
-          borderRadius: BorderRadius.vertical(
-            top: Radius.circular(AppRadii.rXl),
-          ),
-          clipContent: true,
-          child: SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.lg,
-                vertical: AppSpacing.md,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Neumorphic(
-                      width: 40,
-                      height: 4,
-                      inset: true,
-                      radius: AppRadii.rPill,
-                      color: colors.surfaceMuted,
-                      child: const SizedBox.shrink(),
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.lg,
+              vertical: AppSpacing.md,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: colors.border,
+                      borderRadius: AppRadii.pill,
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.md),
-                  Row(
-                    children: [
-                      Icon(Icons.info_outline,
-                          size: 18, color: colors.foreground),
-                      const SizedBox(width: AppSpacing.sm),
-                      Text(
-                        'Thông tin ảnh',
-                        style: AppTypography.heading
-                            .copyWith(color: colors.foreground),
-                      ),
-                      const Spacer(),
-                      Neumorphic(
-                        inset: true,
-                        radius: AppRadii.rPill,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.sm,
-                          vertical: AppSpacing.xs,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.lock_outline,
-                                size: 11, color: colors.foregroundMuted),
-                            const SizedBox(width: AppSpacing.xs),
-                            Text(
-                              'E2EE Encrypted',
-                              style: AppTypography.caption.copyWith(
-                                color: colors.foreground,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  Divider(height: 1, color: colors.border),
-                  const SizedBox(height: AppSpacing.sm),
-                  _InfoRow(label: 'Tên tệp', value: photo.displayTitle),
-                  _InfoRow(
-                    label: 'Loại tệp',
-                    value: photo.checkIsVideo ? 'Video' : 'Ảnh',
-                  ),
-                  _InfoRow(
-                    label: 'Ngày lưu',
-                    value:
-                        '${photo.createdAt.hour.toString().padLeft(2, '0')}:${photo.createdAt.minute.toString().padLeft(2, '0')} • ${photo.createdAt.day.toString().padLeft(2, '0')}/${photo.createdAt.month.toString().padLeft(2, '0')}/${photo.createdAt.year}',
-                  ),
-                  _InfoRow(label: 'Dung lượng', value: photo.fileSize),
-                  _InfoRow(label: 'Thuật toán', value: 'XChaCha20-Poly1305'),
-                  _InfoRow(
-                      label: 'Trạng thái',
-                      value: 'Mã hóa đầu cuối (Client E2EE)'),
-                  const SizedBox(height: AppSpacing.sm),
-                ],
-              ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Row(
+                  children: [
+                    Icon(Icons.info_outline,
+                        size: 18, color: colors.foreground),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text(
+                      'Thông tin tệp',
+                      style: AppTypography.heading
+                          .copyWith(color: colors.foreground),
+                    ),
+                    const Spacer(),
+                    const AppBadge(
+                      label: 'Đã mã hoá',
+                      tone: BadgeTone.primary,
+                      icon: Icons.lock_outline_rounded,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Divider(height: 1, color: colors.border),
+                const SizedBox(height: AppSpacing.sm),
+                _InfoRow(label: 'Tên tệp', value: photo.displayTitle),
+                _InfoRow(
+                  label: 'Loại tệp',
+                  value: photo.checkIsVideo ? 'Video' : 'Ảnh',
+                ),
+                _InfoRow(
+                  label: 'Ngày lưu',
+                  value:
+                      '${photo.createdAt.hour.toString().padLeft(2, '0')}:${photo.createdAt.minute.toString().padLeft(2, '0')} • ${photo.createdAt.day.toString().padLeft(2, '0')}/${photo.createdAt.month.toString().padLeft(2, '0')}/${photo.createdAt.year}',
+                ),
+                _InfoRow(label: 'Dung lượng', value: photo.fileSize),
+                _InfoRow(label: 'Thuật toán', value: 'XChaCha20-Poly1305'),
+                _InfoRow(
+                    label: 'Trạng thái',
+                    value: 'Khóa bọc theo từng thiết bị'),
+                const SizedBox(height: AppSpacing.sm),
+              ],
             ),
           ),
         );

@@ -29,10 +29,12 @@ void main() {
 
     expect(api.verifyAndUnlockPin('000000'), isFalse);
     expect(api.verifyAndUnlockPin('123456'), isTrue);
-  });
 
-  test('logout clears session and PIN state', () async {
-    final api = ApiService();
+    // The PIN must not be readable as plain text on the device.
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('vaultly_vault_pin'), isNull);
+  });
+  test('logout clears session and PIN state', () async {    final api = ApiService();
     await api.setPin('654321');
     expect(api.hasPin, isTrue);
 

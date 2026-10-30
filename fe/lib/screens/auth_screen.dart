@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../theme/app_tokens.dart';
-import '../widgets/neumorphic.dart';
-import '../widgets/segmented_control.dart';
+import '../widgets/flat.dart';
 
 class AuthScreen extends StatefulWidget {
   final VoidCallback onSuccess;
@@ -106,8 +105,8 @@ class _AuthScreenState extends State<AuthScreen> {
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.xl,
-              vertical: AppSpacing.xxl,
+              horizontal: AppSpacing.margin,
+              vertical: AppSpacing.xl,
             ),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: AppSpacing.formMax),
@@ -117,26 +116,20 @@ class _AuthScreenState extends State<AuthScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Brand mark in an extruded hero tile ({rounded.xl})
                     Center(
-                      child: Neumorphic(
-                        width: 68,
-                        height: 68,
-                        radius: AppRadii.rXl,
-                        depth: 1.2,
-                        color: colors.surface,
-                        child: Icon(
-                          Icons.lock_outline_rounded,
-                          size: 30,
-                          color: colors.foreground,
+                      child: Container(
+                        padding: const EdgeInsets.all(AppSpacing.sm),
+                        decoration: BoxDecoration(
+                          color: colors.surface,
+                          borderRadius: BorderRadius.circular(30),
+                          border: Border.all(color: colors.border),
                         ),
+                        child: const VaultMark(size: 64),
                       ),
                     ),
                     const SizedBox(height: AppSpacing.lg),
-
-                    // Auth Hero Title (title-lg: 26px, w700, -0.5px)
                     Text(
-                      'Vaultly Secure Vault',
+                      'Vaultly',
                       textAlign: TextAlign.center,
                       style: AppTypography.titleLg.copyWith(
                         color: colors.foreground,
@@ -144,55 +137,31 @@ class _AuthScreenState extends State<AuthScreen> {
                     ),
                     const SizedBox(height: AppSpacing.xs),
                     Text(
-                      'Bảo mật ảnh cá nhân chuẩn E2EE',
+                      'Kho ảnh riêng tư, mã hóa đầu cuối',
                       textAlign: TextAlign.center,
                       style: AppTypography.body.copyWith(
                         color: colors.foregroundMuted,
                       ),
                     ),
                     const SizedBox(height: AppSpacing.xl),
-
-                    // Segmented Control for Auth Tabs (DESIGN.md)
-                    VaultlySegmentedControl<int>(
-                      selectedValue: _activeTab,
-                      expand: true,
+                    SegmentedPills<int>(
+                      selected: _activeTab,
+                      onChanged: _onTabChanged,
+                      activeFilled: false,
                       segments: const [
-                        VaultlySegment(value: 0, label: 'Đăng nhập'),
-                        VaultlySegment(value: 1, label: 'Đăng ký mới'),
+                        PillSegment(value: 0, label: 'Đăng nhập'),
+                        PillSegment(value: 1, label: 'Đăng ký mới'),
                       ],
-                      onValueChanged: _onTabChanged,
                     ),
-                    const SizedBox(height: AppSpacing.xl),
-
-                    // Error Banner in danger color if any
+                    const SizedBox(height: AppSpacing.lg),
                     if (_errorMessage != null) ...[
-                      Neumorphic(
-                        depth: 0.7,
-                        radius: AppRadii.rSm,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.md,
-                          vertical: AppSpacing.sm + 2,
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.error_outline,
-                                size: 16, color: colors.danger),
-                            const SizedBox(width: AppSpacing.sm),
-                            Expanded(
-                              child: Text(
-                                _errorMessage!,
-                                style: AppTypography.body.copyWith(
-                                  color: colors.danger,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                      InfoBanner(
+                        icon: Icons.error_outline_rounded,
+                        title: _errorMessage!,
+                        tone: BadgeTone.danger,
                       ),
-                      const SizedBox(height: AppSpacing.lg),
+                      const SizedBox(height: AppSpacing.md),
                     ],
-
-                    // Email Field
                     TextFormField(
                       controller: _emailController,
                       keyboardType: TextInputType.emailAddress,
@@ -200,7 +169,7 @@ class _AuthScreenState extends State<AuthScreen> {
                       style: AppTypography.body.copyWith(color: colors.foreground),
                       decoration: const InputDecoration(
                         labelText: 'Email',
-                        prefixIcon: Icon(Icons.email_outlined, size: 18),
+                        prefixIcon: Icon(Icons.alternate_email_rounded, size: 18),
                       ),
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
@@ -213,8 +182,6 @@ class _AuthScreenState extends State<AuthScreen> {
                       },
                     ),
                     const SizedBox(height: AppSpacing.md),
-
-                    // Password Field
                     TextFormField(
                       controller: _passwordController,
                       obscureText: _obscurePassword,
@@ -227,19 +194,19 @@ class _AuthScreenState extends State<AuthScreen> {
                       },
                       decoration: InputDecoration(
                         labelText: 'Mật khẩu',
-                        prefixIcon: const Icon(Icons.lock_outline, size: 18),
+                        prefixIcon: const Icon(Icons.lock_outline_rounded, size: 18),
                         suffixIcon: IconButton(
-                          tooltip: _obscurePassword
-                              ? 'Ẩn mật khẩu'
-                              : 'Hiện mật khẩu',
+                          tooltip:
+                              _obscurePassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu',
                           icon: Icon(
                             _obscurePassword
                                 ? Icons.visibility_outlined
                                 : Icons.visibility_off_outlined,
                             size: 18,
                           ),
-                          onPressed: () =>
-                              setState(() => _obscurePassword = !_obscurePassword),
+                          onPressed: () => setState(
+                            () => _obscurePassword = !_obscurePassword,
+                          ),
                         ),
                       ),
                       validator: (value) {
@@ -252,8 +219,6 @@ class _AuthScreenState extends State<AuthScreen> {
                         return null;
                       },
                     ),
-
-                    // Confirm Password Field (Only on Register tab)
                     if (_activeTab == 1) ...[
                       const SizedBox(height: AppSpacing.md),
                       TextFormField(
@@ -264,7 +229,8 @@ class _AuthScreenState extends State<AuthScreen> {
                         onFieldSubmitted: (_) => _submit(),
                         decoration: InputDecoration(
                           labelText: 'Xác nhận mật khẩu',
-                          prefixIcon: const Icon(Icons.lock_reset_outlined, size: 18),
+                          prefixIcon:
+                              const Icon(Icons.lock_reset_outlined, size: 18),
                           suffixIcon: IconButton(
                             tooltip: _obscureConfirmPassword
                                 ? 'Ẩn mật khẩu'
@@ -275,8 +241,10 @@ class _AuthScreenState extends State<AuthScreen> {
                                   : Icons.visibility_off_outlined,
                               size: 18,
                             ),
-                            onPressed: () => setState(() =>
-                                _obscureConfirmPassword = !_obscureConfirmPassword),
+                            onPressed: () => setState(
+                              () => _obscureConfirmPassword =
+                                  !_obscureConfirmPassword,
+                            ),
                           ),
                         ),
                         validator: (value) {
@@ -292,76 +260,50 @@ class _AuthScreenState extends State<AuthScreen> {
                         },
                       ),
                     ],
-
                     const SizedBox(height: AppSpacing.xl),
-
-                    // Primary Action Button (single ink-filled action)
-                    Neumorphic(
-                      width: double.infinity,
-                      height: 48,
-                      radius: AppRadii.rMd,
-                      depth: 1.1,
-                      color: colors.primary,
-                      onTap: _isLoading ? null : _submit,
-                      semanticLabel:
-                          _activeTab == 0 ? 'Đăng nhập' : 'Tạo tài khoản',
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          if (_isLoading) ...[
-                            SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Theme.of(context).colorScheme.onPrimary,
-                              ),
-                            ),
-                            const SizedBox(width: AppSpacing.sm),
-                          ],
-                          Text(
-                            _activeTab == 0 ? 'Đăng nhập' : 'Tạo tài khoản',
-                            style: AppTypography.label.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: Theme.of(context).colorScheme.onPrimary,
-                            ),
-                          ),
-                        ],
+                    PillButton(
+                      label: _activeTab == 0 ? 'Đăng nhập' : 'Tạo tài khoản',
+                      icon: _isLoading ? null : Icons.arrow_forward_rounded,
+                      variant: PillVariant.primary,
+                      height: 52,
+                      onPressed: _isLoading ? null : _submit,
+                    ),
+                    if (_isLoading) ...[
+                      const SizedBox(height: AppSpacing.md),
+                      LinearProgressIndicator(
+                        minHeight: 3,
+                        color: colors.primary,
+                        backgroundColor: colors.surfaceMuted,
                       ),
-                    ),
-
-                    const SizedBox(height: AppSpacing.sm + 2),
-
-                    // 1-Click Demo Account Login
-                    NeumorphicButton(
-                      onPressed: _isLoading ? null : _fillDemoAccount,
-                      icon: Icons.bolt_outlined,
+                    ],
+                    const SizedBox(height: AppSpacing.md),
+                    PillButton(
                       label: 'Dùng thử tài khoản Demo',
+                      icon: Icons.bolt_outlined,
+                      onPressed: _isLoading ? null : _fillDemoAccount,
                     ),
-
                     const SizedBox(height: AppSpacing.lg),
-
-                    // Collapsible Backend URL Setting (tertiary control)
                     Center(
-                      child: NeumorphicButton(
-                        compact: true,
+                      child: TextButton(
                         onPressed: () =>
                             setState(() => _showUrlConfig = !_showUrlConfig),
-                        icon: _showUrlConfig
-                            ? Icons.keyboard_arrow_up
-                            : Icons.settings_outlined,
-                        label: _showUrlConfig
-                            ? 'Ẩn cấu hình máy chủ'
-                            : 'Tùy chỉnh API Server',
+                        child: Text(
+                          _showUrlConfig
+                              ? 'Ẩn cấu hình máy chủ'
+                              : 'Tuỳ chỉnh API Server',
+                          style: AppTypography.label.copyWith(
+                            color: colors.foregroundMuted,
+                          ),
+                        ),
                       ),
                     ),
-
                     if (_showUrlConfig) ...[
                       const SizedBox(height: AppSpacing.sm),
                       TextFormField(
                         controller: _urlController,
-                        style: AppTypography.label.copyWith(color: colors.foreground),
+                        style: AppTypography.body.copyWith(
+                          color: colors.foreground,
+                        ),
                         decoration: const InputDecoration(
                           labelText: 'API Base URL',
                           hintText: 'https://vaultly-ghqy.onrender.com',

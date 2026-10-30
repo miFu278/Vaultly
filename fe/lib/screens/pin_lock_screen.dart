@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/api_service.dart';
 import '../theme/app_tokens.dart';
-import '../widgets/neumorphic.dart';
+import '../widgets/flat.dart';
 
 enum PinLockMode { unlock, setup }
 
+/// Unlock screen: brand mark, account card, six-dot PIN entry, keypad and the
+/// password fallback. Same PIN logic as before, rebuilt flat.
 class PinLockScreen extends StatefulWidget {
   final PinLockMode mode;
   final VoidCallback onSuccess;
@@ -55,28 +57,26 @@ class _PinLockScreenState extends State<PinLockScreen>
 
   void _onNumberPressed(int number) {
     if (_isVerifying) return;
-    if (_enteredPin.length < _pinLength) {
-      HapticFeedback.lightImpact();
-      setState(() {
-        _errorMessage = null;
-        _enteredPin += number.toString();
-      });
+    if (_enteredPin.length >= _pinLength) return;
 
-      if (_enteredPin.length == _pinLength) {
-        _handlePinComplete();
-      }
+    HapticFeedback.lightImpact();
+    setState(() {
+      _errorMessage = null;
+      _enteredPin += number.toString();
+    });
+
+    if (_enteredPin.length == _pinLength) {
+      _handlePinComplete();
     }
   }
 
   void _onBackspacePressed() {
-    if (_isVerifying) return;
-    if (_enteredPin.isNotEmpty) {
-      HapticFeedback.selectionClick();
-      setState(() {
-        _errorMessage = null;
-        _enteredPin = _enteredPin.substring(0, _enteredPin.length - 1);
-      });
-    }
+    if (_isVerifying || _enteredPin.isEmpty) return;
+    HapticFeedback.selectionClick();
+    setState(() {
+      _errorMessage = null;
+      _enteredPin = _enteredPin.substring(0, _enteredPin.length - 1);
+    });
   }
 
   void _triggerErrorShake(String message) {
@@ -89,6 +89,8 @@ class _PinLockScreenState extends State<PinLockScreen>
   }
 
   Future<void> _handlePinComplete() async {
+    if (_enteredPin.length != _pinLength || _isVerifying) return;
+
     if (widget.mode == PinLockMode.unlock) {
       setState(() => _isVerifying = true);
       final isValid = await _api.unlockWithPin(_enteredPin);
@@ -101,208 +103,126 @@ class _PinLockScreenState extends State<PinLockScreen>
       } else {
         _triggerErrorShake('Mã PIN không đúng. Vui lòng thử lại!');
       }
-    } else {
-      // Setup mode
-      if (!_isConfirming) {
-        setState(() {
-          _firstEnteredPin = _enteredPin;
-          _enteredPin = '';
-          _isConfirming = true;
-          _errorMessage = null;
-        });
-      } else {
-        if (_enteredPin == _firstEnteredPin) {
-          setState(() => _isVerifying = true);
-          final synced = await _api.setPin(_enteredPin);
-          if (!mounted) return;
-          setState(() => _isVerifying = false);
-
-          if (!synced && _api.isAuthenticated) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'Đã lưu PIN trên thiết bị này nhưng chưa đồng bộ được lên máy chủ.',
-                ),
-              ),
-            );
-          }
-          HapticFeedback.mediumImpact();
-          widget.onSuccess();
-        } else {
-          _triggerErrorShake('Mã PIN xác nhận không khớp. Hãy thử lại từ đầu!');
-          setState(() {
-            _firstEnteredPin = null;
-            _isConfirming = false;
-          });
-        }
-      }
+      return;
     }
+
+    // Setup mode: enter, then confirm.
+    if (!_isConfirming) {
+      setState(() {
+        _firstEnteredPin = _enteredPin;
+        _enteredPin = '';
+        _isConfirming = true;
+        _errorMessage = null;
+      });
+      return;
+    }
+
+    if (_enteredPin == _firstEnteredPin) {
+      setState(() => _isVerifying = true);
+      final synced = await _api.setPin(_enteredPin);
+      if (!mounted) return;
+      setState(() => _isVerifying = false);
+
+      if (!synced && _api.isAuthenticated) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Đã lưu PIN trên thiết bị này nhưng chưa đồng bộ được lên máy chủ.',
+            ),
+          ),
+        );
+      }
+      HapticFeedback.mediumImpact();
+      widget.onSuccess();
+      return;
+    }
+
+    _triggerErrorShake('Mã PIN xác nhận không khớp. Hãy thử lại từ đầu!');
+    setState(() {
+      _firstEnteredPin = null;
+      _isConfirming = false;
+    });
+  }
+
+  String get _title {
+    if (widget.mode == PinLockMode.unlock) return 'Vaultly';
+    return _isConfirming ? 'Xác nhận mã PIN' : 'Tạo mã PIN';
+  }
+
+  String get _subtitle {
+    if (widget.mode == PinLockMode.unlock) {
+      return 'Nhập mã PIN 6 số để mở kho ảnh riêng tư';
+    }
+    return _isConfirming
+        ? 'Nhập lại đúng 6 số bạn vừa chọn'
+        : 'Chọn 6 số để bảo vệ kho ảnh trên thiết bị này';
   }
 
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
 
-    final String title;
-    final String subtitle;
-
-    if (widget.mode == PinLockMode.unlock) {
-      title = 'Bảo mật Vaultly';
-      subtitle = 'Nhập mã PIN 6 số để mở khóa thư viện ảnh';
-    } else {
-      if (!_isConfirming) {
-        title = 'Thiết lập mã PIN';
-        subtitle = 'Tạo mã PIN 6 số để bảo vệ ảnh riêng tư của bạn';
-      } else {
-        title = 'Xác nhận mã PIN';
-        subtitle = 'Nhập lại mã PIN 6 số bạn vừa tạo';
-      }
-    }
-
     return Scaffold(
       backgroundColor: colors.background,
       body: SafeArea(
-        // Scroll-safe: on short screens the keypad scrolls instead of clipping.
         child: LayoutBuilder(
           builder: (context, constraints) => SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.margin,
+              vertical: AppSpacing.lg,
+            ),
             child: ConstrainedBox(
-              constraints: BoxConstraints(
-                minHeight: constraints.maxHeight - AppSpacing.xl * 2,
-              ),
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
               child: Center(
                 child: ConstrainedBox(
-                  constraints:
-                      const BoxConstraints(maxWidth: AppSpacing.formMax),
+                  constraints: const BoxConstraints(maxWidth: AppSpacing.formMax),
                   child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      Container(
+                        padding: const EdgeInsets.all(AppSpacing.sm),
+                        decoration: BoxDecoration(
+                          color: colors.surface,
+                          borderRadius: BorderRadius.circular(34),
+                          border: Border.all(color: colors.border),
+                        ),
+                        child: const VaultMark(size: 72),
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      const AppBadge(
+                        label: 'Mã PIN 6 số',
+                        tone: BadgeTone.primary,
+                        icon: Icons.pin_outlined,
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      Text(
+                        _title,
+                        style: AppTypography.titleLg.copyWith(
+                          color: colors.foreground,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        _subtitle,
+                        textAlign: TextAlign.center,
+                        style: AppTypography.body.copyWith(
+                          color: colors.foregroundMuted,
+                        ),
+                      ),
                       const SizedBox(height: AppSpacing.xl),
-
-                      // Shield mark in an extruded disc
-                      Neumorphic(
-                  width: 72,
-                  height: 72,
-                  radius: AppRadii.rPill,
-                  depth: 1.2,
-                  color: colors.surface,
-                  child: Icon(
-                    Icons.shield_outlined,
-                    size: 30,
-                    color: colors.foreground,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.lg),
-
-                // Title (title-lg)
-                Text(
-                  title,
-                  style: AppTypography.titleLg.copyWith(
-                    color: colors.foreground,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xs + 2),
-
-                // Subtitle (body)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-                  child: Text(
-                    subtitle,
-                    textAlign: TextAlign.center,
-                    style: AppTypography.body.copyWith(
-                      color: colors.foregroundMuted,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xxl),
-
-                // PIN dots inside a debossed well; filled = extruded disc
-                AnimatedBuilder(
-                  animation: _shakeAnimation,
-                  builder: (context, child) {
-                    final offset = _shakeAnimation.value == 0
-                        ? Offset.zero
-                        : Offset(_shakeAnimation.value * (_enteredPin.isEmpty ? 1 : -1), 0);
-                    return Transform.translate(
-                      offset: offset,
-                      child: child,
-                    );
-                  },
-                  child: Neumorphic(
-                    inset: true,
-                    radius: AppRadii.rPill,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.lg,
-                      vertical: AppSpacing.md,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(_pinLength, (index) {
-                        final isFilled = index < _enteredPin.length;
-                        final dotColor = _errorMessage != null
-                            ? colors.danger
-                            : colors.foreground;
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.xs + 1,
-                          ),
-                          child: Neumorphic(
-                            width: isFilled ? 16 : 14,
-                            height: isFilled ? 16 : 14,
-                            radius: AppRadii.rPill,
-                            depth: 0.6,
-                            inset: !isFilled,
-                            color: isFilled ? dotColor : colors.surfaceMuted,
-                            child: const SizedBox.shrink(),
-                          ),
-                        );
-                      }),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: AppSpacing.lg),
-
-                // Error Message / verifying indicator
-                SizedBox(
-                  height: 24,
-                  child: _isVerifying
-                      ? SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: colors.foregroundMuted,
-                          ),
-                        )
-                      : (_errorMessage != null
-                          ? Text(
-                              _errorMessage!,
-                              style: AppTypography.body.copyWith(
-                                color: colors.danger,
-                              ),
-                            )
-                          : null),
-                ),
-
-                const SizedBox(height: AppSpacing.xxl),
-
-                // Numeric Keypad (rounded.md, NOT circles)
-                _buildKeypad(colors),
-
-                const SizedBox(height: AppSpacing.xl),
-
-                // Footer option: log out
-                if (widget.onLogout != null)
-                  NeumorphicButton(
-                    onPressed: widget.onLogout,
-                    icon: Icons.logout,
-                    label: 'Đăng xuất tài khoản',
-                  ),
-
-                const SizedBox(height: AppSpacing.lg),
+                      _buildCard(context, colors),
+                      const SizedBox(height: AppSpacing.lg),
+                      _buildKeypad(colors),
+                      const SizedBox(height: AppSpacing.xl),
+                      if (widget.onLogout != null) _buildFallback(context, colors),
+                      const SizedBox(height: AppSpacing.lg),
+                      const InfoBanner(
+                        icon: Icons.lock_outline_rounded,
+                        title: 'Khoá chỉ nằm trên thiết bị này',
+                        message:
+                            'Ảnh được mã hoá trước khi lưu lên máy chủ. PIN chỉ dùng để mở kho trên máy này.',
+                        tone: BadgeTone.neutral,
+                      ),
                     ],
                   ),
                 ),
@@ -314,85 +234,253 @@ class _PinLockScreenState extends State<PinLockScreen>
     );
   }
 
-  Widget _buildKeypad(AppColorsData colors) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+  Widget _buildCard(BuildContext context, AppColorsData colors) {
+    return SurfaceCard(
+      padding: const EdgeInsets.all(AppSpacing.lg),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _buildKeyButton('1', colors, () => _onNumberPressed(1)),
-              const SizedBox(width: AppSpacing.md),
-              _buildKeyButton('2', colors, () => _onNumberPressed(2)),
-              const SizedBox(width: AppSpacing.md),
-              _buildKeyButton('3', colors, () => _onNumberPressed(3)),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _buildKeyButton('4', colors, () => _onNumberPressed(4)),
-              const SizedBox(width: AppSpacing.md),
-              _buildKeyButton('5', colors, () => _onNumberPressed(5)),
-              const SizedBox(width: AppSpacing.md),
-              _buildKeyButton('6', colors, () => _onNumberPressed(6)),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _buildKeyButton('7', colors, () => _onNumberPressed(7)),
-              const SizedBox(width: AppSpacing.md),
-              _buildKeyButton('8', colors, () => _onNumberPressed(8)),
-              const SizedBox(width: AppSpacing.md),
-              _buildKeyButton('9', colors, () => _onNumberPressed(9)),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const SizedBox(width: 74, height: 58),
-              const SizedBox(width: AppSpacing.md),
-              _buildKeyButton('0', colors, () => _onNumberPressed(0)),
-              const SizedBox(width: AppSpacing.md),
-              Neumorphic(
-                width: 74,
-                height: 58,
-                radius: AppRadii.rMd,
-                onTap: _onBackspacePressed,
-                semanticLabel: 'Xóa một số',
-                child: Icon(
-                  Icons.backspace_outlined,
-                  size: 20,
-                  color: colors.foreground,
+              Expanded(
+                child: Text(
+                  widget.mode == PinLockMode.unlock
+                      ? 'Tài khoản'
+                      : 'Thiết lập',
+                  style: AppTypography.label.copyWith(color: colors.foreground),
                 ),
               ),
+              const SizedBox(width: AppSpacing.sm),
+              const AppBadge(
+                label: 'Đã bảo vệ',
+                tone: BadgeTone.success,
+                icon: Icons.shield_outlined,
+              ),
             ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.md,
+            ),
+            decoration: BoxDecoration(
+              color: colors.surfaceMuted,
+              borderRadius: AppRadii.md,
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.person_outline_rounded,
+                    size: 18, color: colors.foregroundMuted),
+                const SizedBox(width: AppSpacing.sm + 2),
+                Expanded(
+                  child: Text(
+                    _api.userEmail ?? 'Tài khoản trên thiết bị này',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.body.copyWith(color: colors.foreground),
+                  ),
+                ),
+                Icon(Icons.lock_outline_rounded,
+                    size: 16, color: colors.success),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          Text(
+            widget.mode == PinLockMode.unlock ? 'Mã PIN' : 'Mã PIN mới',
+            style: AppTypography.caption.copyWith(color: colors.foregroundMuted),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          AnimatedBuilder(
+            animation: _shakeAnimation,
+            builder: (context, child) {
+              final offset = _shakeAnimation.value == 0
+                  ? Offset.zero
+                  : Offset(
+                      _shakeAnimation.value * (_enteredPin.isEmpty ? 1 : -1),
+                      0,
+                    );
+              return Transform.translate(offset: offset, child: child);
+            },
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(_pinLength, (index) {
+                final filled = index < _enteredPin.length;
+                return AnimatedContainer(
+                  duration: AppMotion.fast,
+                  width: filled ? 18 : 16,
+                  height: filled ? 18 : 16,
+                  margin: const EdgeInsets.symmetric(horizontal: 5),
+                  decoration: BoxDecoration(
+                    color: _errorMessage != null
+                        ? (_enteredPin.isEmpty
+                            ? colors.surfaceMuted
+                            : colors.danger)
+                        : (filled ? colors.primary : colors.surfaceMuted),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: filled ? Colors.transparent : colors.border,
+                    ),
+                  ),
+                );
+              }),
+            ),
+          ),
+          SizedBox(
+            height: 34,
+            child: Center(
+              child: _isVerifying
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: colors.primary,
+                      ),
+                    )
+                  : (_errorMessage != null
+                      ? Text(
+                          _errorMessage!,
+                          textAlign: TextAlign.center,
+                          style: AppTypography.caption.copyWith(
+                            color: colors.danger,
+                          ),
+                        )
+                      : null),
+            ),
+          ),
+          PillButton(
+            label: widget.mode == PinLockMode.unlock
+                ? 'Mở khoá'
+                : (_isConfirming ? 'Xác nhận PIN' : 'Tiếp tục'),
+            icon: Icons.lock_open_rounded,
+            variant: PillVariant.primary,
+            expand: true,
+            height: 52,
+            onPressed: _enteredPin.length == _pinLength && !_isVerifying
+                ? _handlePinComplete
+                : null,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildKeyButton(
-    String label,
-    AppColorsData colors,
-    VoidCallback onTap,
-  ) {
-    return NeumorphicButton(
-      width: 74,
-      height: 58,
-      compact: true,
-      label: label,
-      onPressed: onTap,
-      textStyle: AppTypography.title.copyWith(
-        fontSize: 22,
-        fontWeight: FontWeight.w500,
-        fontFeatures: AppTypography.tabularFigures,
+  Widget _buildKeypad(AppColorsData colors) {
+    return Container(
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: AppRadii.lg,
+        border: Border.all(color: colors.border),
+      ),
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      child: Column(
+        children: [
+          for (final row in const [
+            ['1', '2', '3'],
+            ['4', '5', '6'],
+            ['7', '8', '9'],
+            ['', '0', '⌫'],
+          ])
+            Row(
+              children: [
+                for (final key in row)
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: key.isEmpty
+                          ? const SizedBox(height: 56)
+                          : _buildKeyButton(colors, key),
+                    ),
+                  ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildKeyButton(AppColorsData colors, String key) {
+    final isBackspace = key == '⌫';
+
+    return Material(
+      color: colors.surfaceMuted,
+      borderRadius: AppRadii.md,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: isBackspace
+            ? _onBackspacePressed
+            : () => _onNumberPressed(int.parse(key)),
+        child: SizedBox(
+          height: 56,
+          child: Center(
+            child: isBackspace
+                ? Icon(Icons.backspace_outlined,
+                    size: 20, color: colors.foregroundMuted)
+                : Text(
+                    key,
+                    style: AppTypography.title.copyWith(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w600,
+                      color: colors.foreground,
+                      fontFeatures: AppTypography.tabularFigures,
+                    ),
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFallback(BuildContext context, AppColorsData colors) {
+    return InkWell(
+      onTap: widget.onLogout,
+      borderRadius: AppRadii.lg,
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        decoration: BoxDecoration(
+          color: colors.surface,
+          borderRadius: AppRadii.lg,
+          border: Border.all(color: colors.border),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: colors.primarySoft,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.password_rounded,
+                  size: 18, color: colors.primary),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Đăng nhập bằng mật khẩu',
+                    style: AppTypography.label.copyWith(
+                      color: colors.foreground,
+                    ),
+                  ),
+                  Text(
+                    'Dùng email và mật khẩu của tài khoản',
+                    style: AppTypography.caption.copyWith(
+                      color: colors.foregroundMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.arrow_forward_rounded,
+                size: 18, color: colors.primary),
+          ],
+        ),
       ),
     );
   }
