@@ -29,4 +29,8 @@ type ObjectStorage interface {
 
 	// DeleteObject deletes an object from storage
 	DeleteObject(ctx context.Context, objectKey string) error
+
+	// Probe reports whether the configured credentials may read objects from the
+	// bucket. A deployment check, not a request path.
+	Probe(ctx context.Context) error
 }

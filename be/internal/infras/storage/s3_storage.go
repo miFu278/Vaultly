@@ -3,6 +3,7 @@ package storage
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -13,6 +14,7 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/smithy-go"
 	"vaultly-be/internal/domain/service"
 	"vaultly-be/internal/infras/config"
 )
@@ -148,6 +150,42 @@ func (s *S3StorageService) PutObjectReader(ctx context.Context, objectKey string
 	return nil
 }
 
+// accessDeniedHint turns the raw S3 403 into something an operator can act on.
+// Cloudflare answers AccessDenied, not NotFound, when the API token does not
+// cover the bucket, which reads like a code failure otherwise.
+func accessDeniedHint(bucket string, err error) error {
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) && apiErr.ErrorCode() == "AccessDenied" {
+		return fmt.Errorf("%w: bucket %q refused the request; give the R2 API token Object Read (and Object Write) on that exact bucket", err, bucket)
+	}
+	return err
+}
+
+// Probe asks for a key that does not exist. A not-found answer proves the request
+// was authorized; AccessDenied proves the token cannot read this bucket at all.
+func (s *S3StorageService) Probe(ctx context.Context) error {
+	if s.client == nil {
+		return nil
+	}
+
+	_, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucketName),
+		Key:    aws.String("__vaultly_probe__"),
+	})
+	if err == nil {
+		return nil
+	}
+
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		switch apiErr.ErrorCode() {
+		case "NoSuchKey", "NotFound":
+			return nil
+		}
+	}
+	return accessDeniedHint(s.bucketName, err)
+}
+
 func (s *S3StorageService) GetObjectReader(ctx context.Context, objectKey string) (io.ReadCloser, int64, error) {
 	if s.client == nil {
 		s.memMu.RLock()
@@ -168,7 +206,7 @@ func (s *S3StorageService) GetObjectReader(ctx context.Context, objectKey string
 		Key:    aws.String(objectKey),
 	})
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to get object from storage: %w", err)
+		return nil, 0, fmt.Errorf("failed to get object from storage: %w", accessDeniedHint(s.bucketName, err))
 	}
 
 	size := int64(0)
@@ -207,7 +245,7 @@ func (s *S3StorageService) GetObjectRange(ctx context.Context, objectKey string,
 		Range:  aws.String(fmt.Sprintf("bytes=%d-%d", offset, offset+length-1)),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to read object range from storage: %w", err)
+		return nil, fmt.Errorf("failed to read object range from storage: %w", accessDeniedHint(s.bucketName, err))
 	}
 	return out.Body, nil
 }

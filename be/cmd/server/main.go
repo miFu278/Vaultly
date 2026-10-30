@@ -68,6 +68,14 @@ func main() {
 		log.Fatalf("Failed to initialize storage service: %v", err)
 	}
 
+	// Reads are the half of the credential pair that fails quietly: uploads can work
+	// while every view is a 403. Say so at boot instead of on the first request.
+	probeCtx, cancelProbe := context.WithTimeout(context.Background(), 10*time.Second)
+	if probeErr := storageService.Probe(probeCtx); probeErr != nil {
+		log.Printf("WARNING: the R2 bucket is not readable with these credentials: %v", probeErr)
+	}
+	cancelProbe()
+
 	// Dedicated Libsodium Encryption Service with XChaCha20-Poly1305 & secretstream
 	cryptoService := crypto.NewSodiumCryptoService()
 	passwordHasher := crypto.NewBcryptHasher()

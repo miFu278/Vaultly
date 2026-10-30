@@ -195,6 +195,7 @@ dung lượng Supabase tăng nhanh.
 | Container api thoát ngay, log `production requires JWT_SECRET` / `R2_...` | `.env.prod` thiếu biến hoặc chưa truyền `--env-file` |
 | Caddy trả 502 | api chưa healthy: xem `logs api`, thường là `DATABASE_URL` sai hoặc Supabase chặn IP |
 | `failed to connect to database` | dùng host direct IPv6, hoặc thiếu `sslmode=require` |
+| Log `AccessDenied` khi xem ảnh, dù upload được | Token R2 thiếu quyền **Object Read** trên đúng bucket đó, hoặc `R2_BUCKET_NAME` trỏ sang bucket khác phạm vi token. Sửa ở Cloudflare → R2 → Manage API Tokens, rồi restart |
 | Upload trả 413 | vượt `MAX_UPLOAD_MB` hoặc `max_size` trong `Caddyfile` |
 | Không có chứng chỉ TLS | DNS chưa trỏ đúng, hoặc cổng 80/443 bị chặn |
 | Mọi request 401 sau khi deploy | `JWT_SECRET` khác lần trước |
