@@ -3,6 +3,7 @@ package media
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"image"
 	"image/draw"
@@ -27,10 +28,21 @@ const (
 	maxSourcePixels = 50 * 1000 * 1000
 )
 
-// ImageThumbnailer generates JPEG previews with the standard library.
-type ImageThumbnailer struct{}
+// ImageThumbnailer generates JPEG previews with the standard library, and video
+// posters through ffmpeg when that binary is installed.
+type ImageThumbnailer struct {
+	videos VideoPosterer
+}
 
 func NewImageThumbnailer() *ImageThumbnailer { return &ImageThumbnailer{} }
+
+// VideoPosterAvailable reports whether ffmpeg was found at startup.
+func (t *ImageThumbnailer) VideoPosterAvailable() bool { return t.videos.Available() }
+
+// GenerateVideoPoster hands the clip to ffmpeg for a single frame.
+func (t *ImageThumbnailer) GenerateVideoPoster(ctx context.Context, r io.Reader) ([]byte, error) {
+	return t.videos.GeneratePoster(ctx, r, MaxThumbnailDimension)
+}
 
 // Generate decodes a still image and re-encodes it as a small JPEG. It returns
 // nil (without error) when the payload is not a still image the standard library

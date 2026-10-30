@@ -39,6 +39,8 @@ func serveMediaContent(w http.ResponseWriter, r *http.Request, content io.ReadSe
 	h := w.Header()
 	h.Set("Content-Type", contentType)
 	h.Set("Content-Disposition", "inline")
+	// Private: the URL carries the session token, so only this browser may keep
+	// it. With the ETag from the handler a repeat view costs no decryption.
 	h.Set("Cache-Control", "private, max-age=86400")
 	// http.ServeContent only advertises this on success paths; a 416 must still
 	// tell the player that ranges are supported.

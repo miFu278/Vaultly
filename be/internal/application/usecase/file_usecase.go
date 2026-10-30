@@ -298,6 +298,10 @@ func (c *countingReader) Read(p []byte) (int, error) {
 // decode; larger uploads are videos or oversized stills and just skip it.
 const maxThumbnailSourceBytes int64 = 25 << 20
 
+// maxPosterSourceBytes bounds the clip size a video poster is extracted from. The
+// clip is spooled to temp disk once, so this is a disk budget, not a RAM one.
+const maxPosterSourceBytes int64 = 512 << 20
+
 // UploadEncryptedStream validates, encrypts and stores a media stream of any size.
 //
 // Nothing is buffered in memory: the ciphertext is spooled to a temporary file
@@ -458,11 +462,21 @@ func (uc *FileUseCase) storeThumbnail(
 	fileKey []byte,
 	replay func() (service.ReadSeekCloser, error),
 ) string {
-	if uc.thumbnails == nil || replay == nil || plainSize <= 0 || plainSize > maxThumbnailSourceBytes {
+	if uc.thumbnails == nil || replay == nil || plainSize <= 0 {
 		return ""
 	}
-	if !strings.HasPrefix(mimeType, "image/") {
-		return "" // videos need a decoder this service does not ship
+
+	isVideo := strings.HasPrefix(mimeType, "video/")
+	limit := maxThumbnailSourceBytes
+	if isVideo {
+		// A poster needs the whole clip spooled to disk before ffmpeg can seek.
+		limit = maxPosterSourceBytes
+		if !uc.thumbnails.VideoPosterAvailable() {
+			return ""
+		}
+	}
+	if plainSize > limit {
+		return ""
 	}
 
 	src, err := replay()
@@ -472,7 +486,12 @@ func (uc *FileUseCase) storeThumbnail(
 	}
 	defer src.Close()
 
-	jpegData, err := uc.thumbnails.Generate(src)
+	var jpegData []byte
+	if isVideo {
+		jpegData, err = uc.thumbnails.GenerateVideoPoster(ctx, src)
+	} else {
+		jpegData, err = uc.thumbnails.Generate(src)
+	}
 	if err != nil {
 		log.Printf("thumbnail skipped for %s: %v", objectKey, err)
 		return ""

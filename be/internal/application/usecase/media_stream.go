@@ -118,6 +118,15 @@ func (uc *FileUseCase) resolveFileKey(
 		privKey = devicePrivKeyHex[0]
 	}
 
+	// Fast path: a session without a device cannot unwrap anything, and the key
+	// sits in the row itself. Without this the gallery paid two database round
+	// trips per thumbnail for an answer it already had.
+	if deviceID == nil {
+		if key := keyFromNonce(file.Nonce); key != nil {
+			return key, nil
+		}
+	}
+
 	var rawKey []byte
 	if deviceID != nil {
 		if fk, err := uc.fileRepo.GetFileKey(ctx, file.ID, *deviceID); err == nil {
@@ -138,19 +147,28 @@ func (uc *FileUseCase) resolveFileKey(
 		}
 	}
 
-	// Fallback check if key was stored in file.Nonce (format: headerHex:keyHex or keyHex)
-	if len(rawKey) == 0 && file.Nonce != "" {
-		parts := strings.Split(file.Nonce, ":")
-		candidate := parts[len(parts)-1]
-		if k, err := hex.DecodeString(candidate); err == nil && len(k) == 32 {
-			rawKey = k
-		}
+	if len(rawKey) == 0 {
+		rawKey = keyFromNonce(file.Nonce)
 	}
 
 	if len(rawKey) != 32 {
 		return nil, domain.ErrDeviceUnauthorized
 	}
 	return rawKey, nil
+}
+
+// keyFromNonce reads the file key older uploads stored next to the stream header
+// (format: headerHex:keyHex or keyHex).
+func keyFromNonce(nonce string) []byte {
+	if nonce == "" {
+		return nil
+	}
+	parts := strings.Split(nonce, ":")
+	key, err := hex.DecodeString(parts[len(parts)-1])
+	if err != nil || len(key) != 32 {
+		return nil
+	}
+	return key
 }
 
 // unwrapKey opens a sealed box when the caller supplied a private key, and falls

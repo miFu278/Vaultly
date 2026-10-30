@@ -54,6 +54,10 @@ class PhotoTile extends StatelessWidget {
                 Image.network(
                   photo.thumbnailUrl,
                   fit: BoxFit.cover,
+                  // The stored preview is 512px; decoding it at that width instead
+                  // of the screen density keeps a 100-tile grid cheap.
+                  cacheWidth: 512,
+                  filterQuality: FilterQuality.low,
                   errorBuilder: (context, error, stackTrace) => ColoredBox(
                     color: colors.surfaceMuted,
                     child: Icon(

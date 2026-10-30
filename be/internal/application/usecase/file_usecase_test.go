@@ -10,6 +10,7 @@ import (
 	"image/color"
 	"image/jpeg"
 	"io"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -548,6 +549,66 @@ func TestDeleteFile_CopyKeepsTheSharedObject(t *testing.T) {
 	}
 	if len(store.deleted) != 2 {
 		t.Fatalf("deleted %v, want the object and its thumbnail on the last delete", store.deleted)
+	}
+}
+
+// realClip renders a two second clip with ffmpeg so the poster path can be tested
+// against a real container rather than a fake payload.
+func realClip(t *testing.T) []byte {
+	t.Helper()
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg is not installed; video posters cannot be generated here")
+	}
+	cmd := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "error",
+		"-f", "lavfi", "-i", "testsrc=size=320x240:rate=15:duration=2",
+		"-f", "mp4", "-movflags", "frag_keyframe+empty_moov", "pipe:1")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to build the test clip: %v", err)
+	}
+	return out.Bytes()
+}
+
+// A video upload must now get a poster frame, so the gallery does not have to pull
+// the whole clip to draw one tile.
+func TestFileUseCase_VideoUploadGetsPoster(t *testing.T) {
+	clip := realClip(t)
+
+	fileRepo := NewMockFileRepo()
+	deviceRepo := NewMockDeviceRepo()
+	storageSvc, err := storage.NewS3StorageService(&config.Config{R2BucketName: "test-bucket"})
+	if err != nil {
+		t.Fatalf("NewS3StorageService failed: %v", err)
+	}
+	fileUC := usecase.NewFileUseCase(fileRepo, deviceRepo, storageSvc, crypto.NewSodiumCryptoService(), media.NewImageThumbnailer())
+
+	userID := uuid.New()
+	replay := func() (service.ReadSeekCloser, error) {
+		return nopSeekCloser{bytes.NewReader(clip)}, nil
+	}
+	res, err := fileUC.UploadEncryptedStream(context.Background(), userID, nil, "clip.mp4",
+		bytes.NewReader(clip), replay, nil)
+	if err != nil {
+		t.Fatalf("UploadEncryptedStream failed: %v", err)
+	}
+
+	if stored := fileRepo.files[res.FileID]; stored.R2ThumbnailKey == "" {
+		t.Fatal("video upload produced no poster object")
+	}
+
+	thumb, err := fileUC.OpenDecryptedThumbnail(context.Background(), userID, nil, res.FileID)
+	if err != nil {
+		t.Fatalf("OpenDecryptedThumbnail failed: %v", err)
+	}
+	defer thumb.Close()
+
+	data, err := io.ReadAll(thumb.Content)
+	if err != nil {
+		t.Fatalf("reading poster failed: %v", err)
+	}
+	if len(data) < 2 || data[0] != 0xFF || data[1] != 0xD8 {
+		t.Fatalf("poster is not a JPEG (%d bytes)", len(data))
 	}
 }
 

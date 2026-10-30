@@ -539,6 +539,14 @@ func RegisterFileGinRoutes(r *gin.Engine, fileUC *usecase.FileUseCase, authMiddl
 			}
 			defer media.Close()
 
+			// A stable ETag lets the browser answer a repeat view with 304 instead of
+			// paying the decrypt and the storage read again.
+			variant := c.Query("variant")
+			if variant == "" {
+				variant = "full"
+			}
+			c.Writer.Header().Set("Etag", fmt.Sprintf(`"%s-%s"`, fileID, variant))
+
 			serveMediaContent(c.Writer, c.Request, media.Content, media.ContentType)
 		})
 	}

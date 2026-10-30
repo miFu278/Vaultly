@@ -190,10 +190,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     setState(() => _isLoadingApi = true);
     try {
-      await _api.fetchCurrentUser();
-      final folders = await _api.fetchFolders();
-      final allPhotos = await _api.fetchFiles();
-      final storage = await _api.fetchStorage();
+      // Four independent calls: running them in parallel makes the refresh cost
+      // the slowest one instead of the sum, which was several seconds.
+      final results = await Future.wait<Object?>([
+        _api.fetchCurrentUser(),
+        _api.fetchFolders(),
+        _api.fetchFiles(),
+        _api.fetchStorage(),
+      ]);
+      final folders = results[1] as List<Folder>;
+      final allPhotos = results[2] as List<PhotoItem>;
+      final storage = results[3] as StorageUsage?;
 
       if (!mounted) return;
 

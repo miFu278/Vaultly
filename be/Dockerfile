@@ -14,7 +14,9 @@ RUN go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
 # Runtime stage. The server needs a shell only for the healthcheck, so busybox
 # plus CA certificates for the R2 calls is the whole dependency list.
 FROM alpine:3.21
-RUN apk add --no-cache ca-certificates tzdata \
+# ffmpeg is only here to extract video posters; drop it and uploads still work,
+# they just get no poster frame. It costs about 80 MB in the image.
+RUN apk add --no-cache ca-certificates tzdata ffmpeg \
     && adduser -D -H -u 10001 vaultly
 
 WORKDIR /app

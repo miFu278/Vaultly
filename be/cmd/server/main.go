@@ -81,6 +81,11 @@ func main() {
 	passwordHasher := crypto.NewBcryptHasher()
 	tokenService := crypto.NewJWTTokenService(cfg.JWTSecret, cfg.JWTExpirationHours)
 	thumbnailer := media.NewImageThumbnailer()
+	if thumbnailer.VideoPosterAvailable() {
+		log.Println("ffmpeg found: videos get a poster frame")
+	} else {
+		log.Println("ffmpeg not found: videos will have no thumbnail, gallery tiles fall back to the full stream")
+	}
 
 	// 4. Initialize Application Use Cases
 	authUC := usecase.NewAuthUseCase(userRepo, passwordHasher, tokenService)

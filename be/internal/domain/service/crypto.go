@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"io"
 
 	"github.com/google/uuid"
@@ -91,10 +92,17 @@ type ReadSeekCloser interface {
 	io.Closer
 }
 
-// Thumbnailer turns a still image into a small JPEG preview that galleries can
-// load without touching the full-resolution object.
+// Thumbnailer turns media into a small JPEG preview that galleries can load
+// without touching the full-resolution object.
 type Thumbnailer interface {
 	// Generate returns the encoded JPEG, or nil when r holds something that is not
-	// a still image (video) or is too large to decode safely.
+	// a still image or is too large to decode safely.
 	Generate(r io.ReadSeeker) ([]byte, error)
+
+	// GenerateVideoPoster returns one frame of a video as a JPEG, or nil when no
+	// decoder is installed. It is slower than Generate: it spools to disk.
+	GenerateVideoPoster(ctx context.Context, r io.Reader) ([]byte, error)
+
+	// VideoPosterAvailable reports whether a video decoder is installed.
+	VideoPosterAvailable() bool
 }

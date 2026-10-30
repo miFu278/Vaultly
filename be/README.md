@@ -127,7 +127,11 @@ Vì mọi segment (trừ segment cuối) đều đúng bằng `segmentPlainSize`
 
 ### Thumbnail
 
-Server giải mã ảnh một lần lúc upload, resize (hộp lọc, cạnh dài 512 px) và mã hóa lại thành JPEG bằng **cùng file key** rồi lưu cạnh object gốc (key `..._thumb`), ghi vào cột `r2_thumbnail_key`. FE dùng `GET /files/{id}/view?variant=thumb` cho lưới gallery. Video (và WebP không có decoder thuần Go) không có thumbnail — sẽ fallback sang ảnh gốc.
+Server giải mã media một lần lúc upload, resize (hộp lọc, cạnh dài 512 px) và mã hóa lại thành JPEG bằng **cùng file key** rồi lưu cạnh object gốc (key `..._thumb`), ghi vào cột `r2_thumbnail_key`. FE dùng `GET /files/{id}/view?variant=thumb` cho lưới gallery.
+
+- **Video**: lấy một khung hình ở giây thứ 1 bằng `ffmpeg` (có trong Docker image). Clip ngắn hơn 1 giây thì lấy khung đầu. Không có `ffmpeg` thì video không có thumbnail và lưới fallback sang stream đầy đủ, nên log lúc khởi động nói rõ có hay không.
+- **Ảnh**: WebP không có decoder thuần Go nên không có thumbnail.
+- Poster của video tốn thêm một lần ghi plaintext ra temp disk (ffmpeg cần input seek được). Giới hạn `maxPosterSourceBytes` = 512 MB.
 
 Ngoài ra:
 

@@ -419,6 +419,8 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                                     : Image.network(
                                         photo.thumbnailUrl,
                                         fit: BoxFit.cover,
+                                        cacheWidth: 96,
+                                        filterQuality: FilterQuality.low,
                                         errorBuilder: (context, error, stackTrace) =>
                                             const ColoredBox(
                                           color: Colors.white12,
