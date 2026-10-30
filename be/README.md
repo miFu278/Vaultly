@@ -260,7 +260,10 @@ Sau khi push `main`, Render tự deploy nếu project có bật auto-deploy; dep
 - `GET /files/{id}/view` — Giải mã và stream media về client: hỗ trợ **HTTP Range (206/416)** để video phát và tua được, chỉ đọc segment chứa range đó
 - `GET /files/{id}/view?variant=thumb` — Ảnh xem trước nhỏ đã giải mã, dùng cho lưới gallery (404 nếu file không có thumbnail)
 
-#### 5. Pairing (Ủy quyền thiết bị mới bằng QR Code)
+#### 5. Admin
+- `GET /admin/logs?limit=&level=` — Log request gần nhất (mới nhất trước), yêu cầu header `Authorization: Bearer <ADMIN_TOKEN>`; token để trống thì endpoint không tồn tại
+
+#### 6. Pairing (Ủy quyền thiết bị mới bằng QR Code)
 - `POST /pairing/start` — Thiết bị B tạo pairing session
 - `GET /pairing/{token}` — Thiết bị B poll trạng thái hoàn tất
 - `POST /pairing/complete` — Thiết bị A quét QR, nạp wrapped keys cho thiết bị B

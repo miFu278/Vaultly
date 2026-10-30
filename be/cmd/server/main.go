@@ -15,6 +15,7 @@ import (
 	"vaultly-be/internal/infras/config"
 	"vaultly-be/internal/infras/crypto"
 	"vaultly-be/internal/infras/database"
+	"vaultly-be/internal/infras/logging"
 	"vaultly-be/internal/infras/media"
 	"vaultly-be/internal/infras/repositories"
 	"vaultly-be/internal/infras/storage"
@@ -57,6 +58,7 @@ func main() {
 	folderRepo := repositories.NewFolderRepository(pool)
 	fileRepo := repositories.NewFileRepository(pool)
 	pairingRepo := repositories.NewPairingRepository(pool)
+	logRepo := repositories.NewLogRepository(pool)
 
 	storageService, err := storage.NewS3StorageService(cfg)
 	if err != nil {
@@ -75,7 +77,17 @@ func main() {
 	folderUC := usecase.NewFolderUseCase(folderRepo)
 	fileUC := usecase.NewFileUseCase(fileRepo, deviceRepo, storageService, cryptoService, thumbnailer)
 	storageUC := usecase.NewStorageUseCase(userRepo, fileRepo)
+	logUC := usecase.NewLogUseCase(logRepo)
 	pairingUC := usecase.NewPairingUseCase(pairingRepo, deviceRepo, fileRepo, tokenService)
+
+	// Request logs are mirrored into the database so the deployment can be read
+	// from anywhere; the sink batches writes off the request path.
+	var logSink *logging.Sink
+	if cfg.LogToDB {
+		logSink = logging.NewSink(logRepo, time.Duration(cfg.LogRetentionDays)*24*time.Hour)
+		logSink.Start()
+		log.Printf("request log mirrored to the database, kept for %d days", cfg.LogRetentionDays)
+	}
 
 	// 5. Initialize Presentation / HTTP Layer
 	r := gin.New()
@@ -85,10 +97,13 @@ func main() {
 		FolderUseCase:    folderUC,
 		FileUseCase:      fileUC,
 		StorageUseCase:   storageUC,
+		LogUseCase:       logUC,
+		AdminToken:       cfg.AdminToken,
 		PairingUseCase:   pairingUC,
 		TokenService:     tokenService,
 		DeviceRepository: deviceRepo,
 		MaxUploadBytes:   cfg.MaxUploadBytes(),
+		LogSink:          logSink,
 	})
 
 	// 6. HTTP Server Setup with Graceful Shutdown
@@ -125,6 +140,9 @@ func main() {
 
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+	if logSink != nil {
+		logSink.Close()
 	}
 
 	log.Println("Server exited properly")

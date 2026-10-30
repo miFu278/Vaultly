@@ -135,9 +135,58 @@ Lọc nhanh:
 ... logs --since 2h api | grep -E '[0-9]+(\.[0-9]+)?s$'
 ```
 
-Lưu ý: log xoay vòng 10MB × 3 file mỗi container, tự mất khi vượt. Cần lịch sử
-lâu hơn thì phải đẩy log ra ngoài (ví dụ `docker logs` vào Loki hoặc gửi lên một
-aggregator), VPS không tự giữ.
+Lưu ý: log xoay vòng 10MB × 3 file mỗi container, tự mất khi vượt.
+
+## 7b. Xem log từ xa (không cần SSH)
+
+Server ghi mỗi request vào bảng `app_logs` trong Supabase, theo lô và không nằm
+trên đường đi của request, rồi tự xoá bản ghi cũ hơn `LOG_RETENTION_DAYS`.
+
+Bật bằng hai biến trong `.env.prod`:
+
+```ini
+LOG_TO_DB=true
+LOG_RETENTION_DAYS=7
+ADMIN_TOKEN=<openssl rand -base64 32>
+```
+
+Đọc bằng một lệnh, từ máy nào cũng được:
+
+```bash
+# 50 dòng mới nhất
+curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
+  "https://api.example.com/admin/logs?limit=50" | jq
+
+# chỉ lỗi 5xx/chậm, hoặc lọc theo mức
+curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
+  "https://api.example.com/admin/logs?level=warn&limit=100" | jq
+
+# đường dẫn nào đang lỗi nhiều nhất trong 200 dòng gần nhất
+curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
+  "https://api.example.com/admin/logs?limit=200" \
+  | jq -r '.logs[] | select(.status>=400) | "\(.status) \(.path) \(.message)"' | sort | uniq -c | sort -rn
+```
+
+Mỗi dòng có `level` (info/warn/error), `method`, `path`, `status`, `duration_ms`,
+`user_id` (rỗng với route Huma) và `message` (lý do lỗi, với các route Gin).
+Query không được ghi, nên token media không lọt vào bảng.
+
+`ADMIN_TOKEN` để trống thì endpoint không được đăng ký, gọi vào trả 404.
+Đổi token bằng cách sửa `.env.prod` rồi `up -d`; không cần đổi `JWT_SECRET`.
+
+Xem trực tiếp trong Supabase cũng được:
+
+```sql
+select created_at, status, method, path, duration_ms, message
+from app_logs
+where status >= 400
+order by created_at desc
+limit 100;
+```
+
+Lưu ý về bảng này: mỗi request một dòng, nên một lưới ảnh 100 thumbnail sinh 100
+dòng. Với nhu cầu cá nhân thì 7 ngày là đủ; giảm `LOG_RETENTION_DAYS` nếu thấy
+dung lượng Supabase tăng nhanh.
 
 ## 8. Sự cố
 

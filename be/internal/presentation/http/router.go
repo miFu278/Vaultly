@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"vaultly-be/internal/application/usecase"
+	"vaultly-be/internal/domain/entity"
 	"vaultly-be/internal/domain/repository"
 	"vaultly-be/internal/domain/service"
 	"vaultly-be/internal/presentation/http/handlers"
@@ -21,6 +22,11 @@ type RouterDependencies struct {
 	PairingUseCase    *usecase.PairingUseCase
 	TokenService      service.TokenService
 	DeviceRepository  repository.DeviceRepository
+	LogUseCase        *usecase.LogUseCase
+	// LogSink mirrors every request into storage; nil keeps stdout only.
+	LogSink interface{ Append(entity.AppLog) }
+	// AdminToken enables GET /admin/logs when set.
+	AdminToken string
 	// MaxUploadBytes caps a single upload body (0 = handler default).
 	MaxUploadBytes int64
 }
@@ -38,7 +44,7 @@ func SetupRoutes(r *gin.Engine, deps RouterDependencies) huma.API {
 
 	// Setup standard Gin middleware
 	r.Use(gin.Recovery())
-	r.Use(middleware.RequestLogger())
+	r.Use(middleware.RequestLogger(deps.LogSink))
 	r.Use(middleware.BodyLimitMiddleware(maxJSONBodyBytes))
 	r.Use(middleware.CORSMiddleware())
 
@@ -94,6 +100,7 @@ func SetupRoutes(r *gin.Engine, deps RouterDependencies) huma.API {
 	handlers.RegisterFolderRoutes(api, deps.FolderUseCase, deps.FileUseCase)
 	handlers.RegisterFileRoutes(api, deps.FileUseCase)
 	handlers.RegisterStorageRoutes(api, deps.StorageUseCase)
+	handlers.RegisterLogRoutes(api, deps.LogUseCase, deps.AdminToken)
 	handlers.RegisterPairingRoutes(api, deps.PairingUseCase)
 
 	// Register Gin-specific routes (multipart image upload & decrypted stream view)

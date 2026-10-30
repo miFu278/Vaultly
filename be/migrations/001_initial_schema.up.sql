@@ -72,6 +72,24 @@ CREATE TABLE IF NOT EXISTS file_keys (
 
 CREATE INDEX IF NOT EXISTS idx_file_keys_device_id ON file_keys(device_id);
 
+-- Request log kept for a short window so the app can be inspected from
+-- anywhere without opening a shell on the host. Rows older than the retention
+-- window are deleted by the server itself.
+CREATE TABLE IF NOT EXISTS app_logs (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    level VARCHAR(10) NOT NULL,          -- info, warn, error
+    method VARCHAR(10) NOT NULL,
+    path TEXT NOT NULL,
+    status INT NOT NULL,
+    duration_ms INT NOT NULL,
+    user_id UUID NULL,
+    message TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_app_logs_created_at ON app_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_app_logs_level ON app_logs(level, created_at DESC);
+
 -- Pairing sessions table for pairing new devices
 CREATE TABLE IF NOT EXISTS pairings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

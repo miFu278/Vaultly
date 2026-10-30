@@ -12,7 +12,9 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
+	"time"
 
 	"crypto/rand"
 
@@ -24,6 +26,7 @@ import (
 	"vaultly-be/internal/domain/service"
 	"vaultly-be/internal/infras/config"
 	"vaultly-be/internal/infras/crypto"
+	"vaultly-be/internal/infras/logging"
 	"vaultly-be/internal/infras/media"
 	"vaultly-be/internal/infras/storage"
 	presentation "vaultly-be/internal/presentation/http"
@@ -42,8 +45,63 @@ func (fakeFolders) ListByUserID(context.Context, uuid.UUID) ([]entity.Folder, er
 }
 func (fakeFolders) Delete(context.Context, uuid.UUID, uuid.UUID) error { return nil }
 
+// fakeLogs is an in-memory LogRepository so the flow test can prove the sink,
+// the repository and the admin endpoint work together.
+type fakeLogs struct {
+	mu      sync.Mutex
+	entries []entity.AppLog
+}
+
+func (f *fakeLogs) InsertMany(_ context.Context, entries []entity.AppLog) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, e := range entries {
+		e.ID = int64(len(f.entries) + 1)
+		if e.CreatedAt.IsZero() {
+			e.CreatedAt = time.Now()
+		}
+		f.entries = append(f.entries, e)
+	}
+	return nil
+}
+
+func (f *fakeLogs) Recent(_ context.Context, limit int, level string) ([]entity.AppLog, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]entity.AppLog, 0, limit)
+	for i := len(f.entries) - 1; i >= 0 && len(out) < limit; i-- {
+		if level != "" && f.entries[i].Level != level {
+			continue
+		}
+		out = append(out, f.entries[i])
+	}
+	return out, nil
+}
+
+func (f *fakeLogs) DeleteOlderThan(_ context.Context, before time.Time) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	kept := f.entries[:0]
+	var removed int64
+	for _, e := range f.entries {
+		if e.CreatedAt.Before(before) {
+			removed++
+			continue
+		}
+		kept = append(kept, e)
+	}
+	f.entries = kept
+	return removed, nil
+}
+
+func (f *fakeLogs) all() []entity.AppLog {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]entity.AppLog(nil), f.entries...)
+}
+
 // flowServer wires the real router over in-memory repositories and storage.
-func flowServer(t *testing.T) *gin.Engine {
+func flowServer(t *testing.T) (*gin.Engine, *logging.Sink, *fakeLogs) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
@@ -66,6 +124,11 @@ func flowServer(t *testing.T) *gin.Engine {
 	storageUC := usecase.NewStorageUseCase(users, files)
 	pairingUC := usecase.NewPairingUseCase(&stubPairingRepo{}, devices, files, tokens)
 
+	logs := &fakeLogs{}
+	sink := logging.NewSink(logs, 24*time.Hour)
+	sink.Start()
+	t.Cleanup(sink.Close)
+
 	router := gin.New()
 	presentation.SetupRoutes(router, presentation.RouterDependencies{
 		AuthUseCase:      authUC,
@@ -73,12 +136,17 @@ func flowServer(t *testing.T) *gin.Engine {
 		FolderUseCase:    folderUC,
 		FileUseCase:      fileUC,
 		StorageUseCase:   storageUC,
+		LogUseCase:       usecase.NewLogUseCase(logs),
 		PairingUseCase:   pairingUC,
 		TokenService:     tokens,
 		DeviceRepository: devices,
+		LogSink:          sink,
+		AdminToken:       flowAdminToken,
 	})
-	return router
+	return router, sink, logs
 }
+
+const flowAdminToken = "flow-admin-token"
 
 func jpegPayload(t *testing.T) []byte {
 	t.Helper()
@@ -110,7 +178,7 @@ func doJSON(t *testing.T, router http.Handler, method, path, token string, body 
 // A single end-to-end pass over what the app does: register, upload, list, view,
 // thumbnail, download. Whichever step is broken shows up as a named failure.
 func TestFileFlow_ListThenEveryReadPath(t *testing.T) {
-	router := flowServer(t)
+	router, sink, logs := flowServer(t)
 
 	code, body := doJSON(t, router, http.MethodPost, "/auth/register", "",
 		[]byte(`{"email":"flow@example.com","password":"strongpassword"}`))
@@ -273,12 +341,55 @@ func TestFileFlow_ListThenEveryReadPath(t *testing.T) {
 	if usage.QuotaBytes <= 0 {
 		t.Fatalf("quota = %d, want the account default", usage.QuotaBytes)
 	}
+
+	// 9. The request log is readable from outside the host, and the admin token
+	// is the only thing standing in front of it.
+	sink.Close() // flush what the middleware buffered
+
+	code, body = doJSON(t, router, http.MethodGet, "/admin/logs", "", nil)
+	if code != http.StatusUnauthorized {
+		t.Fatalf("admin logs without token: %d %s, want 401", code, body)
+	}
+	code, body = doJSON(t, router, http.MethodGet, "/admin/logs", flowAdminToken, nil)
+	if code != http.StatusOK {
+		t.Fatalf("admin logs: %d %s", code, body)
+	}
+	var logPage struct {
+		Logs []struct {
+			Level   string `json:"level"`
+			Path    string `json:"path"`
+			Status  int    `json:"status"`
+			Message string `json:"message"`
+		} `json:"logs"`
+	}
+	if err := json.Unmarshal(body, &logPage); err != nil {
+		t.Fatalf("admin logs decode: %v %s", err, body)
+	}
+	if len(logPage.Logs) == 0 {
+		t.Fatal("admin logs returned nothing; the sink never wrote")
+	}
+
+	var sawForbidden, sawOk bool
+	for _, entry := range logPage.Logs {
+		switch {
+		case entry.Status == http.StatusForbidden && entry.Level == "warn":
+			sawForbidden = true
+		case entry.Status == http.StatusOK && entry.Path == "/files":
+			sawOk = true
+		}
+	}
+	if !sawForbidden || !sawOk {
+		t.Fatalf("log missing entries (forbidden=%v ok=%v): %+v", sawForbidden, sawOk, logPage.Logs)
+	}
+	if got := len(logs.all()); got < 5 {
+		t.Fatalf("stored %d log entries for the whole flow, want at least 5", got)
+	}
 }
 
 // The same reads with a paired device token, because those tokens carry a
 // device_id and the middleware now re-checks that device on every request.
 func TestFileFlow_PairedDeviceTokenCanRead(t *testing.T) {
-	router := flowServer(t)
+	router, _, _ := flowServer(t)
 
 	code, body := doJSON(t, router, http.MethodPost, "/auth/register", "",
 		[]byte(`{"email":"paired@example.com","password":"strongpassword"}`))

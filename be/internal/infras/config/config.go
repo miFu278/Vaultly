@@ -31,6 +31,12 @@ type Config struct {
 	R2Endpoint                    string
 	PresignedURLExpirationMinutes int
 	MaxUploadMB                   int
+	// AdminToken guards GET /admin/logs. Empty means the route is not served.
+	AdminToken string
+	// LogToDB mirrors request logs into the database so they can be read from
+	// anywhere instead of only from the host's docker log.
+	LogToDB          bool
+	LogRetentionDays int
 }
 
 func LoadConfig() (*Config, error) {
@@ -40,6 +46,7 @@ func LoadConfig() (*Config, error) {
 	jwtHours, _ := strconv.Atoi(getEnv("JWT_EXPIRATION_HOURS", "720"))
 	presignedMinutes, _ := strconv.Atoi(getEnv("PRESIGNED_URL_EXPIRATION_MINUTES", "15"))
 	maxUploadMB, _ := strconv.Atoi(getEnv("MAX_UPLOAD_MB", "512"))
+	logDays, _ := strconv.Atoi(getEnv("LOG_RETENTION_DAYS", "7"))
 
 	cfg := &Config{
 		Port:                          getEnv("PORT", "8080"),
@@ -59,6 +66,9 @@ func LoadConfig() (*Config, error) {
 		R2Endpoint:                    getEnv("R2_ENDPOINT", ""),
 		PresignedURLExpirationMinutes: presignedMinutes,
 		MaxUploadMB:                   maxUploadMB,
+		AdminToken:                    getEnv("ADMIN_TOKEN", ""),
+		LogToDB:                       getEnv("LOG_TO_DB", "true") != "false",
+		LogRetentionDays:              logDays,
 	}
 	cfg.DatabaseURI = getEnv("DATABASE_URL", "")
 
