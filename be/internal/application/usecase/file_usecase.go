@@ -118,6 +118,16 @@ func (uc *FileUseCase) CompleteUpload(ctx context.Context, userID, fileID uuid.U
 	return uc.fileRepo.CompleteUploadTx(ctx, userID, fileID, keys)
 }
 
+// GetFile returns the metadata of one ready file owned by the caller.
+func (uc *FileUseCase) GetFile(ctx context.Context, userID, fileID uuid.UUID) (*dto.FileDTO, error) {
+	file, err := uc.fileRepo.GetReadyByID(ctx, fileID, userID)
+	if err != nil {
+		return nil, err
+	}
+	res := dto.ToFileDTO(file)
+	return &res, nil
+}
+
 // ListFiles lists all ready files for a user
 func (uc *FileUseCase) ListFiles(ctx context.Context, userID uuid.UUID) ([]dto.FileDTO, error) {
 	files, err := uc.fileRepo.ListByUserID(ctx, userID)

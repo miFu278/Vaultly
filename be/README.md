@@ -250,8 +250,9 @@ Sau khi push `main`, Render tự deploy nếu project có bật auto-deploy; dep
 - `POST /files/init` — Tạo presigned PUT URLs cho cả full-res và thumbnail
 - `POST /files/{id}/complete` — Báo upload xong và lưu wrapped keys cho từng device
 - `GET /files` — Danh sách tất cả file metadata
+- `GET /files/{id}` — Metadata của một tệp (404 nếu không tồn tại hoặc chưa `ready`)
 - `GET /storage` — Dung lượng đã dùng (tổng, ảnh, video, số tệp) và hạn mức của tài khoản (`users.storage_quota_bytes`, mặc định 2 GiB)
-- `GET /files/{id}/download` — Lấy presigned GET URL ảnh full-res + wrapped key
+- `GET /files/{id}/download` — Presigned GET URL + key đã bọc cho **thiết bị đã ghép cặp**; token đăng nhập thường không có device nên trả 403, muốn đọc media thì dùng `/view`
 - `GET /files/{id}/thumbnail` — **Lấy presigned GET URL cho thumbnail (dành cho client tự giải mã)**
 - `DELETE /files/{id}` — Xóa file metadata và ciphertext khỏi storage
 - `POST /files/upload` — Upload ảnh **và video** trực tiếp (multipart/form-data), mã hóa chia segment theo luồng, sinh thumbnail cho ảnh; giới hạn `MAX_UPLOAD_MB` (413 nếu vượt)

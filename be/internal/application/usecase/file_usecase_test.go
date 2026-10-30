@@ -48,14 +48,16 @@ func (m *MockFileRepo) GetByID(ctx context.Context, id, userID uuid.UUID) (*enti
 	if f, ok := m.files[id]; ok && f.UserID == userID {
 		return f, nil
 	}
-	return nil, nil
+	// Mirrors the Postgres repository: a missing row is an error, never a nil
+	// file, so callers cannot dereference it by accident.
+	return nil, domain.ErrFileNotFound
 }
 
 func (m *MockFileRepo) GetReadyByID(ctx context.Context, id, userID uuid.UUID) (*entity.File, error) {
 	if f, ok := m.files[id]; ok && f.UserID == userID && f.Status == entity.FileStatusReady {
 		return f, nil
 	}
-	return nil, nil
+	return nil, domain.ErrFileNotFound
 }
 
 func (m *MockFileRepo) ListByUserID(ctx context.Context, userID uuid.UUID) ([]entity.File, error) {

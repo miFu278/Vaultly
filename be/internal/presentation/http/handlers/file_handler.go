@@ -1,4 +1,4 @@
-package handlers
+﻿package handlers
 
 import (
 	"context"
@@ -43,8 +43,13 @@ type DownloadFileOutput struct {
 	Body dto.DownloadResponse
 }
 
-type DeleteFileInput struct {
-	ID string `path:"id" doc:"File UUID to delete"`
+// FileIDInput is the path parameter shared by the single-file endpoints.
+type FileIDInput struct {
+	ID string `path:"id" doc:"File UUID"`
+}
+
+type FileOutput struct {
+	Body dto.FileDTO
 }
 
 type EncryptedUploadInput struct {
@@ -146,7 +151,10 @@ func RegisterFileRoutes(api huma.API, fileUC *usecase.FileUseCase) {
 		} else if devVal := GetDeviceID(ctx); devVal != nil {
 			targetDeviceID = *devVal
 		} else {
-			return nil, huma.Error400BadRequest("X-Device-ID header or device token claim is required")
+			// Without a device there is no wrapped key to hand out, and returning
+			// the raw key is exactly what this endpoint used to leak.
+			return nil, huma.Error403Forbidden(
+				"download needs a paired device; use GET /files/{id}/view to read the media instead")
 		}
 
 		fileID, err := uuid.Parse(input.ID)
@@ -156,10 +164,39 @@ func RegisterFileRoutes(api huma.API, fileUC *usecase.FileUseCase) {
 
 		res, err := fileUC.DownloadFile(ctx, userID, targetDeviceID, fileID)
 		if err != nil {
+			if errors.Is(err, domain.ErrDeviceUnauthorized) {
+				return nil, huma.Error403Forbidden(
+					"this device has no key for the file; use GET /files/{id}/view instead")
+			}
 			return nil, huma.Error400BadRequest(err.Error())
 		}
 
 		return &DownloadFileOutput{Body: *res}, nil
+	})
+
+	// The list gave the app ids; this is the one endpoint that answers "what is
+	// this file" without pulling the ciphertext.
+	huma.Register(api, huma.Operation{
+		OperationID: "getFile",
+		Method:      http.MethodGet,
+		Path:        "/files/{id}",
+		Summary:     "Get one file's metadata",
+		Tags:        []string{"Files"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+	}, func(ctx context.Context, input *FileIDInput) (*FileOutput, error) {
+		userID, err := GetUserID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		fileID, err := uuid.Parse(input.ID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("Invalid file ID format")
+		}
+		res, err := fileUC.GetFile(ctx, userID, fileID)
+		if err != nil {
+			return nil, huma.Error404NotFound(err.Error())
+		}
+		return &FileOutput{Body: *res}, nil
 	})
 
 	huma.Register(api, huma.Operation{
@@ -169,7 +206,7 @@ func RegisterFileRoutes(api huma.API, fileUC *usecase.FileUseCase) {
 		Summary:     "Delete file metadata and storage ciphertext",
 		Tags:        []string{"Files"},
 		Security:    []map[string][]string{{"bearerAuth": {}}},
-	}, func(ctx context.Context, input *DeleteFileInput) (*MessageOutput, error) {
+	}, func(ctx context.Context, input *FileIDInput) (*MessageOutput, error) {
 		userID, err := GetUserID(ctx)
 		if err != nil {
 			return nil, err
@@ -302,7 +339,7 @@ func RegisterFileRoutes(api huma.API, fileUC *usecase.FileUseCase) {
 		Summary:     "Get presigned GET URL for fast gallery thumbnail",
 		Tags:        []string{"Files"},
 		Security:    []map[string][]string{{"bearerAuth": {}}},
-	}, func(ctx context.Context, input *DeleteFileInput) (*DownloadFileOutput, error) {
+	}, func(ctx context.Context, input *FileIDInput) (*DownloadFileOutput, error) {
 		userID, err := GetUserID(ctx)
 		if err != nil {
 			return nil, err
@@ -392,7 +429,7 @@ func RegisterFileGinRoutes(r *gin.Engine, fileUC *usecase.FileUseCase, authMiddl
 			form, err := c.MultipartForm()
 			if tooLarge(err) {
 				c.JSON(http.StatusRequestEntityTooLarge, gin.H{
-					"error": fmt.Sprintf("Tệp quá lớn, giới hạn %dMB mỗi tệp", limit>>20),
+					"error": fmt.Sprintf("Tá»‡p quÃ¡ lá»›n, giá»›i háº¡n %dMB má»—i tá»‡p", limit>>20),
 				})
 				return
 			}
